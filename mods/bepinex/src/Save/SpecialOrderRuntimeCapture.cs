@@ -17,6 +17,7 @@ public static class SpecialOrderRuntimeCapture
 
     private static readonly object SyncRoot = new();
     private static readonly List<CapturedRuntimeSpecialOrder> Orders = new();
+    private static readonly List<RuntimeParseFailureDiagnostic> RecentParseFailures = new();
     private static readonly HashSet<string> PatchedMethods = new(StringComparer.Ordinal);
     private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(5);
     private static Harmony? _harmony;
@@ -29,9 +30,21 @@ public static class SpecialOrderRuntimeCapture
     private static int _statusCallbacks;
     private static int _capturedOrders;
     private static int _parseFailures;
+    private static long _changeVersion;
     private static string _lastCapture = "";
     private static string _lastParseFailure = "";
     private static string _lastOrderShape = "";
+
+    public static long ChangeVersion
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                return _changeVersion;
+            }
+        }
+    }
 
     public static string Status
     {
@@ -60,6 +73,20 @@ public static class SpecialOrderRuntimeCapture
             return Orders
                 .OrderBy(order => order.FirstCapturedAt)
                 .ThenBy(order => order.CapturedAt)
+                .ToList();
+        }
+    }
+
+    public static IReadOnlyList<string> RecentParseFailuresSnapshot(TimeSpan maxAge, int limit = 16)
+    {
+        var now = DateTime.UtcNow;
+        lock (SyncRoot)
+        {
+            PruneRecentParseFailuresLocked(now, maxAge);
+            return RecentParseFailures
+                .OrderByDescending(failure => failure.CapturedAtUtc)
+                .Take(limit)
+                .Select(failure => $"{failure.CapturedAtUtc:O}; {failure.Message}")
                 .ToList();
         }
     }
@@ -211,6 +238,7 @@ public static class SpecialOrderRuntimeCapture
             Orders.Add(next);
             _capturedOrders++;
             _lastCapture = $"{next.CaptureSource}: desk={next.DeskCode}, guestId={next.GuestId?.ToString() ?? ""}, food={next.FoodTag}({next.FoodTagId}), bev={next.BeverageTag}({next.BeverageTagId})";
+            _changeVersion++;
             _status = BuildStatusLocked();
             if (Orders.Count > MaxOrders)
             {
@@ -225,8 +253,9 @@ public static class SpecialOrderRuntimeCapture
 
         lock (SyncRoot)
         {
-            Orders.RemoveAll(existing => IsSameOrderSlot(existing, order));
+            var removed = Orders.RemoveAll(existing => IsSameOrderSlot(existing, order));
             _lastCapture = $"removed: desk={order.DeskCode}, guestId={order.GuestId?.ToString() ?? ""}";
+            if (removed > 0) _changeVersion++;
             _status = BuildStatusLocked();
         }
     }
@@ -610,18 +639,37 @@ public static class SpecialOrderRuntimeCapture
 
     private static void NoteParseFailure(string source, string reason, object? order = null, ParsedOrderText? textParts = null)
     {
+        var shape = DescribeOrderShape(order, textParts);
         lock (SyncRoot)
         {
             _parseFailures++;
             _lastParseFailure = $"{source}: {reason}";
-            _lastOrderShape = DescribeOrderShape(order, textParts);
+            _lastOrderShape = shape;
+            AddRecentParseFailureLocked(source, reason, shape);
             _status = BuildStatusLocked();
         }
     }
 
+    private static void AddRecentParseFailureLocked(string source, string reason, string shape)
+    {
+        RecentParseFailures.Add(new RuntimeParseFailureDiagnostic(
+            DateTime.UtcNow,
+            TrimStatus($"{source}: {reason}; {shape}", 900)));
+        PruneRecentParseFailuresLocked(DateTime.UtcNow, TimeSpan.FromMinutes(5));
+        if (RecentParseFailures.Count > 40)
+        {
+            RecentParseFailures.RemoveRange(0, RecentParseFailures.Count - 40);
+        }
+    }
+
+    private static void PruneRecentParseFailuresLocked(DateTime nowUtc, TimeSpan maxAge)
+    {
+        RecentParseFailures.RemoveAll(failure => nowUtc - failure.CapturedAtUtc > maxAge);
+    }
+
     private static string BuildStatusLocked()
     {
-        return $"patched={PatchedMethods.Count}; callbacks=add:{_addCallbacks},remove:{_removeCallbacks},generated:{_generatedCallbacks},statusUpdate:{_statusCallbacks}; captured={_capturedOrders}; parseFailures={_parseFailures}; lastCapture={_lastCapture}; lastParseFailure={_lastParseFailure}; lastOrderShape={_lastOrderShape}";
+        return $"patched={PatchedMethods.Count}; version={_changeVersion}; callbacks=add:{_addCallbacks},remove:{_removeCallbacks},generated:{_generatedCallbacks},statusUpdate:{_statusCallbacks}; captured={_capturedOrders}; parseFailures={_parseFailures}; lastCapture={_lastCapture}; lastParseFailure={_lastParseFailure}; lastOrderShape={_lastOrderShape}";
     }
 
     private static ParsedOrderText ParseOrderText(string? text)
@@ -908,3 +956,7 @@ public sealed record CapturedRuntimeSpecialOrder(
     DateTime CapturedAt,
     string RuntimeKey,
     string CaptureSource);
+
+internal sealed record RuntimeParseFailureDiagnostic(
+    DateTime CapturedAtUtc,
+    string Message);
