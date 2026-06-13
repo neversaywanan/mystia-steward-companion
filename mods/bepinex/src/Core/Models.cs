@@ -40,6 +40,28 @@ public sealed class Beverage
     public int Price { get; set; }
 }
 
+public sealed class RuntimeDataCatalog
+{
+    public bool IsComplete { get; init; }
+    public string Source { get; init; } = "";
+    public string Status { get; init; } = "";
+    public List<Recipe> Recipes { get; init; } = new();
+    public List<Ingredient> Ingredients { get; init; } = new();
+    public List<Beverage> Beverages { get; init; } = new();
+    public List<NormalCustomer> NormalCustomers { get; init; } = new();
+    public List<RareCustomer> RareCustomers { get; init; } = new();
+    public Dictionary<string, string> FoodTagIdMap { get; init; } = new(StringComparer.Ordinal);
+
+    public static RuntimeDataCatalog Empty(string status)
+    {
+        return new RuntimeDataCatalog
+        {
+            IsComplete = false,
+            Status = status,
+        };
+    }
+}
+
 public sealed class PlacedCookerInfo
 {
     public int ControllerIndex { get; init; }
@@ -202,13 +224,30 @@ public sealed class RuntimeMissionInfo
     public string CharacterName { get; init; } = "";
     public List<string> Places { get; init; } = new();
     public string Source { get; init; } = "";
+    public string Status { get; init; } = "available";
     public bool Started { get; init; }
     public bool Finished { get; init; }
+    public int? TargetRecipeId { get; init; }
+    public string? TargetRecipeName { get; init; }
+}
+
+public sealed class RuntimeMissionServeTarget
+{
+    public int GuestId { get; init; }
+    public string GuestName { get; init; } = "";
+    public string GuestLabel { get; init; } = "";
+    public string MissionLabel { get; init; } = "";
+    public string MissionTitle { get; init; } = "";
+    public int RecipeId { get; init; }
+    public string RecipeName { get; init; } = "";
+    public string Status { get; init; } = "tracking";
+    public string Source { get; init; } = "";
 }
 
 public sealed class RuntimeMissionContext
 {
     public List<RuntimeMissionInfo> AvailableMissions { get; init; } = new();
+    public List<RuntimeMissionServeTarget> ServeTargets { get; init; } = new();
     public string Source { get; init; } = "";
     public string? Error { get; init; }
 }
@@ -254,6 +293,7 @@ public sealed class RecommendationState
     public HashSet<int> AvailableRecipeIds { get; } = new();
     public HashSet<int> AvailableBeverageIds { get; } = new();
     public HashSet<int> AvailableIngredientIds { get; } = new();
+    public HashSet<int> AvailableRareCustomerIds { get; } = new();
     public Dictionary<int, int> OwnedIngredientQty { get; } = new();
     public Dictionary<int, int> OwnedBeverageQty { get; } = new();
     public HashSet<int> PlacedCookerTypeIds { get; } = new();
