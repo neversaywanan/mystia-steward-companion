@@ -1,6 +1,7 @@
 using BepInEx.Logging;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using MystiaStewardCompanion.Core;
 using MystiaStewardCompanion.LocalApi;
@@ -64,6 +65,7 @@ internal sealed class StewardOverlayController
     private float _nextSpecialOrderRefreshAt;
     private long _lastRuntimeSceneReadinessVersion;
     private string _lastPublishedRuntimeDataSignature = "";
+    private string _lastLocalApiSnapshotContentSignature = "";
     private readonly List<RuntimeRareCustomer> _runtimeRareCustomers = new();
     private readonly Dictionary<string, double> _performanceMs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, float> _performanceUpdatedAt = new(StringComparer.Ordinal);
@@ -603,7 +605,16 @@ internal sealed class StewardOverlayController
                 RuntimeData = BuildRuntimeDataForSnapshot(force),
                 PerformanceMs = BuildPerformanceSnapshot(),
             };
+
+            var contentSignature = BuildLocalApiSnapshotContentSignature(snapshot);
+            if (!force && string.Equals(contentSignature, _lastLocalApiSnapshotContentSignature, StringComparison.Ordinal))
+            {
+                _localApiSnapshotErrorLogged = false;
+                return;
+            }
+
             _localApiServer.SetSnapshotJson(Measure("snapshot.serialize", () => JsonSerializer.Serialize(snapshot, LocalApiJsonOptions)));
+            _lastLocalApiSnapshotContentSignature = contentSignature;
             _localApiSnapshotErrorLogged = false;
         }
         catch (Exception ex)
@@ -674,6 +685,254 @@ internal sealed class StewardOverlayController
             catalog.NormalCustomers.Count,
             catalog.RareCustomers.Count,
             catalog.FoodTagIdMap.Count);
+    }
+
+    private static string BuildLocalApiSnapshotContentSignature(LocalApiSnapshot snapshot)
+    {
+        var builder = new StringBuilder(2048);
+        AppendValue(builder, snapshot.PluginVersion);
+        AppendValue(builder, snapshot.ActiveSceneName);
+        AppendValue(builder, snapshot.ActiveDayMapLabel);
+        AppendValue(builder, snapshot.ActiveDayMapName);
+        AppendValue(builder, snapshot.RuntimeLoaded);
+        AppendValue(builder, snapshot.Status);
+        AppendValue(builder, snapshot.RuntimeSource);
+        AppendValue(builder, snapshot.RuntimeSceneReadinessStatus);
+        AppendValue(builder, snapshot.RuntimeUiPinningStatus);
+        AppendRecommendationSnapshot(builder, snapshot.RecommendationState);
+        AppendNightBusiness(builder, snapshot.NightBusiness);
+        AppendRuntimeMissions(builder, snapshot.RuntimeMissions);
+        AppendNormalBusiness(builder, snapshot.NormalBusiness);
+        AppendRuntimeRareCustomers(builder, snapshot.RuntimeRareCustomers);
+        AppendValue(builder, snapshot.RuntimeData == null ? "<runtime-data:null>" : BuildRuntimeDataSignature(snapshot.RuntimeData));
+        return builder.ToString();
+    }
+
+    private static void AppendRecommendationSnapshot(StringBuilder builder, RecommendationStateSnapshot? snapshot)
+    {
+        if (snapshot == null)
+        {
+            AppendValue(builder, "<recommendation:null>");
+            return;
+        }
+
+        AppendInts(builder, snapshot.AvailableRecipeIds);
+        AppendInts(builder, snapshot.AvailableBeverageIds);
+        AppendInts(builder, snapshot.AvailableIngredientIds);
+        AppendInts(builder, snapshot.AvailableRareCustomerIds);
+        AppendIntDictionary(builder, snapshot.OwnedIngredientQty);
+        AppendIntDictionary(builder, snapshot.OwnedBeverageQty);
+        AppendInts(builder, snapshot.PlacedCookerTypeIds);
+        foreach (var cooker in snapshot.PlacedCookers.OrderBy(cooker => cooker.ControllerIndex))
+        {
+            AppendValue(builder, cooker.ControllerIndex);
+            AppendInts(builder, cooker.TypeIds);
+            AppendStrings(builder, cooker.TypeNames);
+            AppendValue(builder, cooker.Name);
+            AppendValue(builder, cooker.IsOpen);
+            AppendValue(builder, cooker.Source);
+        }
+
+        AppendValue(builder, snapshot.PlacedCookerStatus);
+        AppendValue(builder, snapshot.PopularFoodTag);
+        AppendValue(builder, snapshot.PopularHateFoodTag);
+        AppendValue(builder, snapshot.FamousShopEnabled);
+    }
+
+    private static void AppendNightBusiness(StringBuilder builder, NightBusinessContext? context)
+    {
+        if (context == null)
+        {
+            AppendValue(builder, "<night-business:null>");
+            return;
+        }
+
+        AppendValue(builder, context.Place);
+        AppendValue(builder, context.PlaceLabel);
+        AppendValue(builder, context.Source);
+        AppendValue(builder, context.Error);
+        foreach (var guest in context.ActiveRareGuests
+                     .OrderBy(guest => guest.DeskCode)
+                     .ThenBy(guest => guest.GuestId ?? -1)
+                     .ThenBy(guest => guest.GuestName, StringComparer.Ordinal))
+        {
+            AppendValue(builder, guest.DeskCode);
+            AppendValue(builder, guest.GuestId);
+            AppendValue(builder, guest.GuestName);
+            AppendValue(builder, guest.Source);
+            AppendValue(builder, guest.Fund);
+            AppendValue(builder, guest.BaseFundCarry);
+            AppendValue(builder, guest.MaxFundCarry);
+            AppendValue(builder, guest.ExtraFundByBuff);
+            AppendValue(builder, guest.WillPayMoney);
+        }
+
+        foreach (var order in context.Orders
+                     .OrderBy(order => order.DeskCode)
+                     .ThenBy(order => order.GuestId ?? -1)
+                     .ThenBy(order => order.FoodTagId)
+                     .ThenBy(order => order.BeverageTagId)
+                     .ThenBy(order => order.Source, StringComparer.Ordinal))
+        {
+            AppendValue(builder, order.DeskCode);
+            AppendValue(builder, order.GuestId);
+            AppendValue(builder, order.GuestName);
+            AppendValue(builder, order.FoodTagId);
+            AppendValue(builder, order.FoodTag);
+            AppendValue(builder, order.BeverageTagId);
+            AppendValue(builder, order.BeverageTag);
+            AppendValue(builder, order.Source);
+            AppendValue(builder, order.HasServedFood);
+            AppendValue(builder, order.HasServedBeverage);
+        }
+    }
+
+    private static void AppendRuntimeMissions(StringBuilder builder, RuntimeMissionContext? context)
+    {
+        if (context == null)
+        {
+            AppendValue(builder, "<missions:null>");
+            return;
+        }
+
+        AppendValue(builder, context.Source);
+        AppendValue(builder, context.Error);
+        foreach (var mission in context.AvailableMissions
+                     .OrderBy(mission => mission.Label, StringComparer.Ordinal)
+                     .ThenBy(mission => mission.Title, StringComparer.Ordinal))
+        {
+            AppendValue(builder, mission.Label);
+            AppendValue(builder, mission.Title);
+            AppendValue(builder, mission.CharacterLabel);
+            AppendValue(builder, mission.CharacterName);
+            AppendStrings(builder, mission.Places);
+            AppendValue(builder, mission.Source);
+            AppendValue(builder, mission.Status);
+            AppendValue(builder, mission.Started);
+            AppendValue(builder, mission.Finished);
+            AppendValue(builder, mission.TargetRecipeId);
+            AppendValue(builder, mission.TargetRecipeName);
+        }
+
+        foreach (var target in context.ServeTargets
+                     .OrderBy(target => target.GuestId)
+                     .ThenBy(target => target.MissionLabel, StringComparer.Ordinal)
+                     .ThenBy(target => target.RecipeId))
+        {
+            AppendValue(builder, target.GuestId);
+            AppendValue(builder, target.GuestName);
+            AppendValue(builder, target.GuestLabel);
+            AppendValue(builder, target.MissionLabel);
+            AppendValue(builder, target.MissionTitle);
+            AppendValue(builder, target.RecipeId);
+            AppendValue(builder, target.RecipeName);
+            AppendValue(builder, target.Status);
+            AppendValue(builder, target.Source);
+        }
+    }
+
+    private static void AppendNormalBusiness(StringBuilder builder, NormalBusinessContext? context)
+    {
+        if (context == null)
+        {
+            AppendValue(builder, "<normal-business:null>");
+            return;
+        }
+
+        AppendValue(builder, context.Source);
+        AppendValue(builder, context.Error);
+        foreach (var order in context.Orders
+                     .OrderBy(order => order.OrderKey, StringComparer.Ordinal)
+                     .ThenBy(order => order.DeskCode)
+                     .ThenBy(order => order.GuestName, StringComparer.Ordinal))
+        {
+            AppendValue(builder, order.OrderKey);
+            AppendValue(builder, order.DeskCode);
+            AppendValue(builder, order.GuestName);
+            AppendValue(builder, order.FoodId);
+            AppendValue(builder, order.FoodName);
+            AppendValue(builder, order.BeverageId);
+            AppendValue(builder, order.BeverageName);
+            AppendValue(builder, order.HasServedFood);
+            AppendValue(builder, order.HasServedBeverage);
+            AppendValue(builder, order.HasStoredFood);
+            AppendValue(builder, order.HasStoredFoodReceipt);
+            AppendValue(builder, order.StoredFoodCount);
+            AppendValue(builder, order.StoredFoodStatus);
+            AppendValue(builder, order.IsFulfilled);
+            AppendValue(builder, order.Source);
+        }
+    }
+
+    private static void AppendRuntimeRareCustomers(StringBuilder builder, IEnumerable<RuntimeRareCustomer> customers)
+    {
+        foreach (var customer in customers.OrderBy(customer => customer.Id).ThenBy(customer => customer.Name, StringComparer.Ordinal))
+        {
+            AppendValue(builder, customer.Id);
+            AppendValue(builder, customer.RuntimeStringId);
+            AppendValue(builder, customer.Name);
+            AppendStrings(builder, customer.Places);
+            AppendStrings(builder, customer.PositiveTags);
+            AppendStrings(builder, customer.NegativeTags);
+            AppendStrings(builder, customer.BeverageTags);
+            AppendValue(builder, customer.Source);
+        }
+    }
+
+    private static void AppendIntDictionary(StringBuilder builder, IReadOnlyDictionary<int, int> values)
+    {
+        foreach (var item in values.OrderBy(item => item.Key))
+        {
+            AppendValue(builder, item.Key);
+            AppendValue(builder, item.Value);
+        }
+    }
+
+    private static void AppendInts(StringBuilder builder, IEnumerable<int> values)
+    {
+        foreach (var value in values.OrderBy(value => value))
+        {
+            AppendValue(builder, value);
+        }
+    }
+
+    private static void AppendStrings(StringBuilder builder, IEnumerable<string> values)
+    {
+        foreach (var value in values.OrderBy(value => value, StringComparer.Ordinal))
+        {
+            AppendValue(builder, value);
+        }
+    }
+
+    private static void AppendValue(StringBuilder builder, string? value)
+    {
+        if (value == null)
+        {
+            builder.Append("<null>|");
+            return;
+        }
+
+        builder.Append(value.Length).Append(':').Append(value).Append('|');
+    }
+
+    private static void AppendValue(StringBuilder builder, bool value)
+    {
+        builder.Append(value ? "1|" : "0|");
+    }
+
+    private static void AppendValue(StringBuilder builder, bool? value)
+    {
+        builder.Append(value.HasValue ? (value.Value ? "1|" : "0|") : "<null>|");
+    }
+
+    private static void AppendValue(StringBuilder builder, int value)
+    {
+        builder.Append(value).Append('|');
+    }
+
+    private static void AppendValue(StringBuilder builder, int? value)
+    {
+        builder.Append(value?.ToString() ?? "<null>").Append('|');
     }
 
     private T Measure<T>(string key, Func<T> action)

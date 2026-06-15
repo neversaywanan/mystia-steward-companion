@@ -1,7 +1,7 @@
-using System.Collections;
 using System.Reflection;
 using MystiaStewardCompanion.Core;
 using UnityEngine;
+using static MystiaStewardCompanion.Save.RuntimeReflectionUtility;
 
 namespace MystiaStewardCompanion.Save;
 
@@ -67,41 +67,62 @@ public sealed class NightBusinessReflectionProvider
         sourceStats.Add($"StaticData={staticDataSnapshot.Status}");
         Measure("diagnostics.staticData", () => WriteRuntimeStaticDataDiagnostics(mappedGuestSnapshot, staticDataSnapshot));
 
+        IReadOnlyList<CapturedRuntimeSpecialOrder> runtimeOrders = Array.Empty<CapturedRuntimeSpecialOrder>();
         try
         {
-            var orderControllerOrders = Measure("rare.orderController", () => ReadOrderControllerOrders().ToList());
-            sourceStats.Add($"OrderController={orderControllerOrders.Count}");
-            orders.AddRange(orderControllerOrders);
+            runtimeOrders = Measure("runtimeCapture.snapshot", () => SpecialOrderRuntimeCapture.Snapshot(RuntimeCapturedOrderMaxAge));
+            sourceStats.Add($"RuntimeCaptureCache={runtimeOrders.Count}");
         }
         catch (Exception ex)
         {
-            sourceStats.Add("OrderController=err");
-            errors.Add($"order controller: {ex.Message}");
+            sourceStats.Add("RuntimeCapture=err");
+            errors.Add($"runtime capture: {ex.Message}");
         }
 
-        try
-        {
-            var hudOrders = Measure("rare.hud", () => ReadHudOrders().ToList());
-            sourceStats.Add($"HUD={hudOrders.Count}");
-            orders.AddRange(hudOrders);
-        }
-        catch (Exception ex)
-        {
-            sourceStats.Add("HUD=err");
-            errors.Add($"HUD orders: {ex.Message}");
-        }
+        var preferRuntimeCapturedOrders = _diagnostics == null && runtimeOrders.Count > 0;
+        sourceStats.Add(preferRuntimeCapturedOrders ? "OrderReadMode=RuntimeCapture" : "OrderReadMode=Reflection");
 
         try
         {
             var servePanelContexts = Measure("rare.servePanel.contexts", () => ReadServePanelContexts().ToList());
             sourceStats.Add($"ServePanel={servePanelContexts.Count}");
             guests.AddRange(Measure("rare.servePanel.guests", () => ReadServePanelRareGuests(servePanelContexts).ToList()));
-            orders.AddRange(Measure("rare.servePanel.orders", () => ReadServePanelOrders(servePanelContexts).ToList()));
+            if (!preferRuntimeCapturedOrders)
+            {
+                orders.AddRange(Measure("rare.servePanel.orders", () => ReadServePanelOrders(servePanelContexts).ToList()));
+            }
         }
         catch (Exception ex)
         {
             sourceStats.Add("ServePanel=err");
             errors.Add($"serve panel: {ex.Message}");
+        }
+
+        if (!preferRuntimeCapturedOrders)
+        {
+            try
+            {
+                var orderControllerOrders = Measure("rare.orderController", () => ReadOrderControllerOrders().ToList());
+                sourceStats.Add($"OrderController={orderControllerOrders.Count}");
+                orders.AddRange(orderControllerOrders);
+            }
+            catch (Exception ex)
+            {
+                sourceStats.Add("OrderController=err");
+                errors.Add($"order controller: {ex.Message}");
+            }
+
+            try
+            {
+                var hudOrders = Measure("rare.hud", () => ReadHudOrders().ToList());
+                sourceStats.Add($"HUD={hudOrders.Count}");
+                orders.AddRange(hudOrders);
+            }
+            catch (Exception ex)
+            {
+                sourceStats.Add("HUD=err");
+                errors.Add($"HUD orders: {ex.Message}");
+            }
         }
 
         var managerStatus = Measure("manager.status", ReadManagerStatus);
@@ -114,7 +135,10 @@ public sealed class NightBusinessReflectionProvider
                 var controllers = Measure($"controllers.{source.Source}", () => ReadManagerControllers(source.MemberName).ToList());
                 sourceStats.Add($"{source.Source}={controllers.Count}");
                 guests.AddRange(Measure($"rare.guests.{source.Source}", () => ReadRareGuests(controllers, source.Source).ToList()));
-                orders.AddRange(Measure($"rare.orders.{source.Source}", () => ReadControllerOrders(controllers, source.Source).ToList()));
+                if (!preferRuntimeCapturedOrders)
+                {
+                    orders.AddRange(Measure($"rare.orders.{source.Source}", () => ReadControllerOrders(controllers, source.Source).ToList()));
+                }
             }
             catch (Exception ex)
             {
@@ -128,7 +152,10 @@ public sealed class NightBusinessReflectionProvider
             var queuedControllers = Measure("controllers.Queue", () => ReadQueuedControllers().ToList());
             sourceStats.Add($"Queue={queuedControllers.Count}");
             guests.AddRange(Measure("rare.guests.Queue", () => ReadRareGuests(queuedControllers, "Queue").ToList()));
-            orders.AddRange(Measure("rare.orders.Queue", () => ReadControllerOrders(queuedControllers, "Queue").ToList()));
+            if (!preferRuntimeCapturedOrders)
+            {
+                orders.AddRange(Measure("rare.orders.Queue", () => ReadControllerOrders(queuedControllers, "Queue").ToList()));
+            }
         }
         catch (Exception ex)
         {
@@ -139,19 +166,18 @@ public sealed class NightBusinessReflectionProvider
         var activeGuests = Measure("deduplicate.guests", () => DeduplicateGuests(guests));
         var rawLiveOrders = orders.ToList();
         var acceptedRuntimeOrders = new List<NightBusinessOrder>();
-        try
+        if (runtimeOrders.Count > 0)
         {
-            var runtimeOrders = Measure("runtimeCapture.snapshot", () => SpecialOrderRuntimeCapture.Snapshot(RuntimeCapturedOrderMaxAge));
             acceptedRuntimeOrders = Measure("runtimeCapture.accept", () => ReadRuntimeCapturedOrders(runtimeOrders, activeGuests).ToList());
             sourceStats.Add($"RuntimeCapture={acceptedRuntimeOrders.Count}/{runtimeOrders.Count}");
             sourceStats.Add($"RuntimeCaptureStatus={SpecialOrderRuntimeCapture.Status}");
             sourceStats.Add($"UiPinning={RuntimeUiPinningService.Status}");
             orders.AddRange(acceptedRuntimeOrders);
         }
-        catch (Exception ex)
+        else
         {
-            sourceStats.Add("RuntimeCapture=err");
-            errors.Add($"runtime capture: {ex.Message}");
+            sourceStats.Add($"RuntimeCaptureStatus={SpecialOrderRuntimeCapture.Status}");
+            sourceStats.Add($"UiPinning={RuntimeUiPinningService.Status}");
         }
 
         var activeOrders = Measure("deduplicate.orders", () => DeduplicateOrders(orders));
@@ -351,7 +377,7 @@ public sealed class NightBusinessReflectionProvider
 
         foreach (var item in EnumerateObjects(GetMemberValue(manager, memberName)))
         {
-            var controller = NormalizeController(item);
+            var controller = NormalizeKeyValueValue(item);
             if (controller != null) yield return controller;
         }
     }
@@ -363,7 +389,7 @@ public sealed class NightBusinessReflectionProvider
 
         foreach (var item in EnumerateObjects(GetStaticMemberValue(guestGroupControllerType, "QueuedGuestControllers")))
         {
-            var controller = NormalizeController(item);
+            var controller = NormalizeKeyValueValue(item);
             if (controller != null) yield return controller;
         }
     }
@@ -374,11 +400,11 @@ public sealed class NightBusinessReflectionProvider
         {
             if (!IsRareGuestController(controller, AllowOrderingGuestIdResolution(source)))
             {
-                RecordCandidate("Controller", source, accepted: false, "not recognized as rare guest controller", DescribeControllerCandidate(controller));
+                RecordCandidate("Controller", source, accepted: false, "not recognized as rare guest controller", () => DescribeControllerCandidate(controller));
                 continue;
             }
 
-            RecordCandidate("Controller", source, accepted: true, "rare guest controller", DescribeControllerCandidate(controller));
+            RecordCandidate("Controller", source, accepted: true, "rare guest controller", () => DescribeControllerCandidate(controller));
 
             foreach (var order in EnumerateControllerOrders(controller))
             {
@@ -402,7 +428,7 @@ public sealed class NightBusinessReflectionProvider
             yield return order;
         }
 
-        var peekOrder = InvokeInstanceMethod(controller, "PeekOrders");
+        var peekOrder = InvokeMethod(controller, "PeekOrders");
         if (peekOrder != null) yield return peekOrder;
     }
 
@@ -419,7 +445,7 @@ public sealed class NightBusinessReflectionProvider
     {
         if (controller == null)
         {
-            RecordCandidate("GuestController", source, accepted: false, "controller is null", "");
+            RecordCandidate("GuestController", source, accepted: false, "controller is null", null);
             return null;
         }
 
@@ -428,7 +454,7 @@ public sealed class NightBusinessReflectionProvider
         var guest = specialGuest ?? orderingGuest;
         if (guest == null)
         {
-            RecordCandidate("GuestController", source, accepted: false, "SpecialGuest and OrderingGuest are null", DescribeControllerCandidate(controller));
+            RecordCandidate("GuestController", source, accepted: false, "SpecialGuest and OrderingGuest are null", () => DescribeControllerCandidate(controller));
             return null;
         }
 
@@ -438,7 +464,7 @@ public sealed class NightBusinessReflectionProvider
             : ResolveOrderingGuestRareCustomerIdentity(orderingGuest, AllowOrderingGuestIdResolution(source));
         if (specialGuest == null && identity == null && !IsSpecialGuestObject(orderingGuest))
         {
-            RecordCandidate("GuestController", source, accepted: false, "OrderingGuest is not an explicit rare guest", DescribeControllerCandidate(controller));
+            RecordCandidate("GuestController", source, accepted: false, "OrderingGuest is not an explicit rare guest", () => DescribeControllerCandidate(controller));
             return null;
         }
 
@@ -454,7 +480,7 @@ public sealed class NightBusinessReflectionProvider
             ExtraFundByBuff = ReadNullableIntMember(controller, "ExtraFundByBuff"),
             WillPayMoney = ReadNullableBoolMember(controller, "WillPayMoney"),
         };
-        RecordCandidate("GuestController", source, accepted: true, "accepted rare guest", DescribeControllerCandidate(controller));
+        RecordCandidate("GuestController", source, accepted: true, "accepted rare guest", () => DescribeControllerCandidate(controller));
         return result;
     }
 
@@ -473,7 +499,7 @@ public sealed class NightBusinessReflectionProvider
 
         if (specialGuest == null)
         {
-            RecordCandidate("GuestFromOrder", source, accepted: false, "SpecialGuests missing on order and controller", DescribeOrderCandidate(order, controller));
+            RecordCandidate("GuestFromOrder", source, accepted: false, "SpecialGuests missing on order and controller", () => DescribeOrderCandidate(order, controller));
             return null;
         }
 
@@ -491,7 +517,7 @@ public sealed class NightBusinessReflectionProvider
             ExtraFundByBuff = ReadNullableIntMember(controller, "ExtraFundByBuff"),
             WillPayMoney = ReadNullableBoolMember(controller, "WillPayMoney"),
         };
-        RecordCandidate("GuestFromOrder", source, accepted: true, "accepted rare guest from order", DescribeOrderCandidate(order, controller));
+        RecordCandidate("GuestFromOrder", source, accepted: true, "accepted rare guest from order", () => DescribeOrderCandidate(order, controller));
         return result;
     }
 
@@ -499,13 +525,13 @@ public sealed class NightBusinessReflectionProvider
     {
         if (order == null)
         {
-            RecordCandidate("Order", source, accepted: false, "order is null", DescribeControllerCandidate(controller));
+            RecordCandidate("Order", source, accepted: false, "order is null", () => DescribeControllerCandidate(controller));
             return null;
         }
 
         if (!IsSpecialOrder(order) && !IsManualSpecialOrder(order, controller))
         {
-            RecordCandidate("Order", source, accepted: false, "not a special order by current rules", DescribeOrderCandidate(order, controller));
+            RecordCandidate("Order", source, accepted: false, "not a special order by current rules", () => DescribeOrderCandidate(order, controller));
             return null;
         }
 
@@ -523,7 +549,7 @@ public sealed class NightBusinessReflectionProvider
 
         if (specialGuest == null)
         {
-            RecordCandidate("Order", source, accepted: false, "SpecialGuests/SpecialGuest/OrderingGuest missing", DescribeOrderCandidate(order, controller));
+            RecordCandidate("Order", source, accepted: false, "SpecialGuests/SpecialGuest/OrderingGuest missing", () => DescribeOrderCandidate(order, controller));
             return null;
         }
 
@@ -535,7 +561,7 @@ public sealed class NightBusinessReflectionProvider
         var beverageTagId = ResolveTagId(beverageTag, GetMemberValue(order, "RequestBeverageTag"), useFoodTagMap: false);
         if (foodTagId == 0 && beverageTagId == 0 && string.IsNullOrWhiteSpace(foodTag) && string.IsNullOrWhiteSpace(beverageTag))
         {
-            RecordCandidate("Order", source, accepted: false, "empty food and beverage tag", DescribeOrderCandidate(order, controller));
+            RecordCandidate("Order", source, accepted: false, "empty food and beverage tag", () => DescribeOrderCandidate(order, controller));
             return null;
         }
 
@@ -555,7 +581,7 @@ public sealed class NightBusinessReflectionProvider
             HasServedFood = ReadOrderServedState(order, "ServFood", "ServedFoodInAir"),
             HasServedBeverage = ReadOrderServedState(order, "ServBeverage", "ServedBeverageInAir"),
         };
-        RecordCandidate("Order", source, accepted: true, "accepted special order", DescribeOrderCandidate(order, controller));
+        RecordCandidate("Order", source, accepted: true, "accepted special order", () => DescribeOrderCandidate(order, controller));
         return result;
     }
 
@@ -1008,11 +1034,12 @@ public sealed class NightBusinessReflectionProvider
         return InvokeStaticMethod(dataBaseCharacterType, "RefSGuest", refGuestId);
     }
 
-    private void RecordCandidate(string kind, string source, bool accepted, string reason, string details)
+    private void RecordCandidate(string kind, string source, bool accepted, string reason, Func<string>? detailsFactory)
     {
         if (_candidateDiagnostics == null) return;
         if (_candidateDiagnostics.Count >= MaxCandidateDiagnostics) return;
 
+        var details = detailsFactory?.Invoke() ?? "";
         _candidateDiagnostics.Add(new NightBusinessCandidateDiagnostic
         {
             Kind = kind,
@@ -1205,12 +1232,6 @@ public sealed class NightBusinessReflectionProvider
         return value[..Math.Max(0, maxLength - 3)] + "...";
     }
 
-    private static bool ToBool(object? value)
-    {
-        if (value is bool boolValue) return boolValue;
-        return string.Equals(value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
-    }
-
     private string ResolveTagText(object specialGuest, string methodName, int tagId, bool useFoodTagMap)
     {
         if (TryResolveTagTextFromMap(tagId, useFoodTagMap, out var mapped)) return mapped;
@@ -1272,7 +1293,7 @@ public sealed class NightBusinessReflectionProvider
         var normalized = CanonicalizeTagText(ResolveOrderTagFromText(SafeToString(order), orderTextLabel), useFoodTagMap);
         if (!string.IsNullOrWhiteSpace(normalized)) return normalized;
 
-        var controllerValue = InvokeInstanceMethod(controller, controllerMethodName, order)?.ToString();
+        var controllerValue = InvokeMethod(controller, controllerMethodName, order)?.ToString();
         normalized = CanonicalizeTagText(controllerValue, useFoodTagMap);
         if (!string.IsNullOrWhiteSpace(normalized)) return normalized;
 
@@ -1488,447 +1509,6 @@ public sealed class NightBusinessReflectionProvider
         return null;
     }
 
-    private static object? FindUnityObject(Type type)
-    {
-        var method = typeof(UnityEngine.Object).GetMethod("FindObjectOfType", new[] { typeof(Type) });
-        if (method == null) return null;
-
-        try
-        {
-            return method.Invoke(null, new object[] { type });
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static IEnumerable<object?> FindUnityObjects(Type type)
-    {
-        var method = typeof(UnityEngine.Object).GetMethod("FindObjectsOfType", new[] { typeof(Type) });
-        if (method == null) yield break;
-
-        object? objects = null;
-        try
-        {
-            objects = method.Invoke(null, new object[] { type });
-        }
-        catch
-        {
-            yield break;
-        }
-
-        foreach (var item in EnumerateObjects(objects))
-        {
-            yield return item;
-        }
-    }
-
-    private static object? GetSingletonInstance(Type type)
-    {
-        foreach (var name in new[] { "Instance", "UniqueInstance", "instance", "m_Instance", "m_instance", "s_Instance", "m_UniqueInstance" })
-        {
-            var current = type;
-            while (current != null)
-            {
-                var property = FindProperty(current, name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-                if (property != null)
-                {
-                    try
-                    {
-                        var value = property.GetValue(null);
-                        if (value != null) return value;
-                    }
-                    catch
-                    {
-                        // Try the next known singleton name.
-                    }
-                }
-
-                var field = current.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-                if (field != null)
-                {
-                    try
-                    {
-                        var value = field.GetValue(null);
-                        if (value != null) return value;
-                    }
-                    catch
-                    {
-                        // Try the next known singleton name.
-                    }
-                }
-
-                current = current.BaseType;
-            }
-        }
-
-        return null;
-    }
-
-    private static object? InvokeStaticMethod(Type type, string name, params object?[] args)
-    {
-        var method = FindMethod(type, name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, args)
-            ?? FindMethod(type, name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, args.Length)
-            ?? FindMethod(type, name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-        if (method == null) return null;
-
-        try
-        {
-            return method.Invoke(null, args);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static object? InvokeInstanceMethod(object? instance, string name, params object?[] args)
-    {
-        if (instance == null) return null;
-
-        var method = FindMethod(instance.GetType(), name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, args.Length);
-        if (method == null) return null;
-
-        try
-        {
-            return method.Invoke(instance, args);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static Type? FindType(string fullName)
-    {
-        var direct = Type.GetType(fullName, false);
-        if (direct != null) return direct;
-
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            try
-            {
-                var type = assembly.GetType(fullName, false);
-                if (type != null) return type;
-            }
-            catch
-            {
-                // Ignore assemblies that cannot resolve unrelated IL2CPP types.
-            }
-        }
-
-        return null;
-    }
-
-    private static object? GetMemberValue(object? instance, string name)
-    {
-        if (instance == null) return null;
-        var type = instance.GetType();
-
-        while (type != null)
-        {
-            if (TryReadKnownField(instance, type, name, out var knownFieldValue)) return knownFieldValue;
-
-            var property = FindProperty(type, name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (TryReadProperty(instance, property, out var propertyValue)) return propertyValue;
-
-            var field = type.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (TryReadField(instance, field, out var fieldValue) && fieldValue != null) return fieldValue;
-
-            var pascalName = char.ToUpperInvariant(name[0]) + name[1..];
-            if (TryReadKnownField(instance, type, pascalName, out knownFieldValue)) return knownFieldValue;
-
-            property = FindProperty(type, pascalName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (TryReadProperty(instance, property, out propertyValue)) return propertyValue;
-
-            field = type.GetField(pascalName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (TryReadField(instance, field, out fieldValue) && fieldValue != null) return fieldValue;
-
-            type = type.BaseType;
-        }
-
-        return null;
-    }
-
-    private static object? GetStaticMemberValue(Type type, string name)
-    {
-        var current = type;
-        while (current != null)
-        {
-            if (TryReadKnownStaticField(current, name, out var knownFieldValue)) return knownFieldValue;
-
-            var property = FindProperty(current, name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            if (TryReadProperty(null, property, out var propertyValue)) return propertyValue;
-
-            var field = current.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            if (TryReadField(null, field, out var fieldValue) && fieldValue != null) return fieldValue;
-
-            var pascalName = char.ToUpperInvariant(name[0]) + name[1..];
-            if (TryReadKnownStaticField(current, pascalName, out knownFieldValue)) return knownFieldValue;
-
-            current = current.BaseType;
-        }
-
-        return null;
-    }
-
-    private static bool TryReadKnownField(object instance, Type type, string name, out object? value)
-    {
-        value = null;
-        foreach (var fieldName in BuildFieldNameCandidates(name))
-        {
-            var field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (TryReadField(instance, field, out value) && value != null) return true;
-        }
-
-        return false;
-    }
-
-    private static bool TryReadKnownStaticField(Type type, string name, out object? value)
-    {
-        value = null;
-        foreach (var fieldName in BuildFieldNameCandidates(name))
-        {
-            var field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            if (TryReadField(null, field, out value) && value != null) return true;
-        }
-
-        return false;
-    }
-
-    private static IEnumerable<string> BuildFieldNameCandidates(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) yield break;
-
-        yield return name;
-        yield return $"<{name}>k__BackingField";
-        yield return $"m_{name}";
-        yield return $"_{name}";
-
-        var camelName = char.ToLowerInvariant(name[0]) + name[1..];
-        if (!string.Equals(camelName, name, StringComparison.Ordinal))
-        {
-            yield return camelName;
-            yield return $"<{camelName}>k__BackingField";
-            yield return $"m_{camelName}";
-            yield return $"_{camelName}";
-        }
-    }
-
-    private static PropertyInfo? FindProperty(Type type, string name, BindingFlags flags)
-    {
-        try
-        {
-            return type.GetProperty(name, flags);
-        }
-        catch (AmbiguousMatchException)
-        {
-            return type.GetProperties(flags).FirstOrDefault(property => property.Name == name);
-        }
-    }
-
-    private static MethodInfo? FindMethod(Type type, string name, BindingFlags flags)
-    {
-        try
-        {
-            return type.GetMethod(name, flags);
-        }
-        catch (AmbiguousMatchException)
-        {
-            return type.GetMethods(flags).FirstOrDefault(method => method.Name == name);
-        }
-    }
-
-    private static MethodInfo? FindMethod(Type type, string name, BindingFlags flags, int parameterCount)
-    {
-        return type
-            .GetMethods(flags)
-            .FirstOrDefault(method => method.Name == name && method.GetParameters().Length == parameterCount);
-    }
-
-    private static MethodInfo? FindMethod(Type type, string name, BindingFlags flags, object?[] args)
-    {
-        return type
-            .GetMethods(flags)
-            .FirstOrDefault(method => method.Name == name && AreParametersCompatible(method.GetParameters(), args));
-    }
-
-    private static bool AreParametersCompatible(IReadOnlyList<ParameterInfo> parameters, IReadOnlyList<object?> args)
-    {
-        if (parameters.Count != args.Count) return false;
-
-        for (var i = 0; i < parameters.Count; i++)
-        {
-            if (!IsParameterCompatible(parameters[i].ParameterType, args[i])) return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsParameterCompatible(Type parameterType, object? arg)
-    {
-        if (arg == null) return !parameterType.IsValueType || Nullable.GetUnderlyingType(parameterType) != null;
-
-        var argType = arg.GetType();
-        if (parameterType.IsAssignableFrom(argType)) return true;
-        if (parameterType.IsEnum) return argType == typeof(int) || argType == typeof(short) || argType == typeof(long);
-        if (parameterType == typeof(int)) return argType == typeof(short) || argType == typeof(long);
-        if (parameterType == typeof(long)) return argType == typeof(int) || argType == typeof(short);
-        return false;
-    }
-
-    private static bool TryReadProperty(object? instance, PropertyInfo? property, out object? value)
-    {
-        value = null;
-        if (property == null) return false;
-
-        try
-        {
-            value = property.GetValue(instance);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryReadField(object? instance, FieldInfo? field, out object? value)
-    {
-        value = null;
-        if (field == null) return false;
-
-        try
-        {
-            value = field.GetValue(instance);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static IEnumerable<object?> EnumerateObjects(object? value)
-    {
-        if (value == null) yield break;
-
-        if (value is IEnumerable enumerable && value is not string)
-        {
-            foreach (var item in enumerable)
-            {
-                yield return item;
-            }
-
-            yield break;
-        }
-
-        var values = GetMemberValue(value, "Values");
-        if (values != null && !ReferenceEquals(values, value))
-        {
-            foreach (var item in EnumerateObjects(values))
-            {
-                yield return item;
-            }
-
-            yield break;
-        }
-
-        var enumerated = false;
-        foreach (var item in EnumerateObjectsByReflection(value))
-        {
-            enumerated = true;
-            yield return item;
-        }
-
-        if (enumerated) yield break;
-
-        var count = ToInt(GetMemberValue(value, "Count") ?? GetMemberValue(value, "Length"));
-        if (count <= 0) yield break;
-
-        var indexer = value.GetType().GetProperty("Item", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        if (indexer == null) yield break;
-
-        for (var i = 0; i < count; i++)
-        {
-            object? item = null;
-            try
-            {
-                item = indexer.GetValue(value, new object[] { i });
-            }
-            catch
-            {
-                // Stop trying this collection if its indexer is incompatible.
-                yield break;
-            }
-
-            yield return item;
-        }
-    }
-
-    private static IEnumerable<object?> EnumerateObjectsByReflection(object value)
-    {
-        object? enumerator = null;
-        try
-        {
-            var method = FindMethod(value.GetType(), "GetEnumerator", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            enumerator = method?.Invoke(value, Array.Empty<object?>());
-        }
-        catch
-        {
-            yield break;
-        }
-
-        if (enumerator == null) yield break;
-
-        var enumeratorType = enumerator.GetType();
-        var moveNext = FindMethod(enumeratorType, "MoveNext", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        if (moveNext == null) yield break;
-
-        while (true)
-        {
-            object? moved;
-            try
-            {
-                moved = moveNext.Invoke(enumerator, Array.Empty<object?>());
-            }
-            catch
-            {
-                yield break;
-            }
-
-            if (moved is not bool isMoved || !isMoved) yield break;
-            yield return GetMemberValue(enumerator, "Current");
-        }
-    }
-
-    private static object? NormalizeController(object? value)
-    {
-        if (value == null) return null;
-
-        var fromKeyValue = GetMemberValue(value, "Value")
-            ?? GetMemberValue(value, "value")
-            ?? GetMemberValue(value, "m_Value")
-            ?? GetMemberValue(value, "Item2");
-        return fromKeyValue ?? value;
-    }
-
-    private static int CountObjects(object? value)
-    {
-        if (value == null) return 0;
-        var count = ToInt(GetMemberValue(value, "Count") ?? GetMemberValue(value, "Length"));
-        if (count > 0) return count;
-
-        var total = 0;
-        foreach (var _ in EnumerateObjects(value))
-        {
-            total++;
-        }
-
-        return total;
-    }
-
     private static int? ToNullableInt(object? value)
     {
         if (value == null) return null;
@@ -1952,13 +1532,4 @@ public sealed class NightBusinessReflectionProvider
         return null;
     }
 
-    private static int ToInt(object? value)
-    {
-        if (value == null) return 0;
-        if (value is int intValue) return intValue;
-        if (value is long longValue) return (int)longValue;
-        if (value is short shortValue) return shortValue;
-        if (int.TryParse(value.ToString(), out var parsed)) return parsed;
-        return 0;
-    }
 }

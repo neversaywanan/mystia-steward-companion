@@ -1,29 +1,38 @@
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Reflection;
 
 namespace MystiaStewardCompanion.Save;
 
 internal static class RuntimeReflectionUtility
 {
+    private static readonly ConcurrentDictionary<string, CachedLookup<Type>> TypeCache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<MemberCacheKey, CachedLookup<PropertyInfo>> PropertyCache = new();
+    private static readonly ConcurrentDictionary<MemberCacheKey, CachedLookup<FieldInfo>> FieldCache = new();
+    private static readonly ConcurrentDictionary<MethodCacheKey, CachedLookup<MethodInfo>> MethodCache = new();
+
     public static Type? FindType(string fullName)
     {
-        var direct = Type.GetType(fullName, throwOnError: false);
-        if (direct != null) return direct;
-
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        return TypeCache.GetOrAdd(fullName, static key =>
         {
-            try
-            {
-                var type = assembly.GetType(fullName, throwOnError: false);
-                if (type != null) return type;
-            }
-            catch
-            {
-                // Ignore assemblies that cannot resolve unrelated IL2CPP types.
-            }
-        }
+            var direct = Type.GetType(key, throwOnError: false);
+            if (direct != null) return new CachedLookup<Type>(direct);
 
-        return null;
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    var type = assembly.GetType(key, throwOnError: false);
+                    if (type != null) return new CachedLookup<Type>(type);
+                }
+                catch
+                {
+                    // Ignore assemblies that cannot resolve unrelated IL2CPP types.
+                }
+            }
+
+            return new CachedLookup<Type>(null);
+        }).Value;
     }
 
     public static object? GetSingletonInstance(Type type)
@@ -163,7 +172,7 @@ internal static class RuntimeReflectionUtility
                 var property = FindProperty(current, memberName, flags);
                 if (TryReadProperty(null, property, out var propertyValue)) return propertyValue;
 
-                var field = current.GetField(memberName, flags);
+                var field = FindField(current, memberName, flags);
                 if (TryReadField(null, field, out var fieldValue)) return fieldValue;
             }
         }
@@ -185,7 +194,7 @@ internal static class RuntimeReflectionUtility
                 var property = FindProperty(type, memberName, flags);
                 if (TryReadProperty(instance, property, out var propertyValue)) return propertyValue;
 
-                var field = type.GetField(memberName, flags);
+                var field = FindField(type, memberName, flags);
                 if (TryReadField(instance, field, out var fieldValue)) return fieldValue;
 
                 var method = FindMethod(type, memberName, 0, isStatic: false);
@@ -377,7 +386,7 @@ internal static class RuntimeReflectionUtility
         value = null;
         foreach (var fieldName in BuildFieldNameCandidates(name))
         {
-            var field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var field = FindField(type, fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             if (TryReadField(instance, field, out value)) return true;
         }
 
@@ -389,7 +398,7 @@ internal static class RuntimeReflectionUtility
         value = null;
         foreach (var fieldName in BuildFieldNameCandidates(name))
         {
-            var field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            var field = FindField(type, fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
             if (TryReadField(null, field, out value)) return true;
         }
 
@@ -430,48 +439,72 @@ internal static class RuntimeReflectionUtility
 
     private static PropertyInfo? FindProperty(Type type, string name, BindingFlags flags)
     {
-        try
+        return PropertyCache.GetOrAdd(new MemberCacheKey(type, name, flags), static key =>
         {
-            return type.GetProperty(name, flags);
-        }
-        catch (AmbiguousMatchException)
+            try
+            {
+                return new CachedLookup<PropertyInfo>(key.Type.GetProperty(key.Name, key.Flags));
+            }
+            catch (AmbiguousMatchException)
+            {
+                return new CachedLookup<PropertyInfo>(key.Type.GetProperties(key.Flags).FirstOrDefault(property => property.Name == key.Name));
+            }
+        }).Value;
+    }
+
+    private static FieldInfo? FindField(Type type, string name, BindingFlags flags)
+    {
+        return FieldCache.GetOrAdd(new MemberCacheKey(type, name, flags), static key =>
         {
-            return type.GetProperties(flags).FirstOrDefault(property => property.Name == name);
-        }
+            try
+            {
+                return new CachedLookup<FieldInfo>(key.Type.GetField(key.Name, key.Flags));
+            }
+            catch (AmbiguousMatchException)
+            {
+                return new CachedLookup<FieldInfo>(key.Type.GetFields(key.Flags).FirstOrDefault(field => field.Name == key.Name));
+            }
+        }).Value;
     }
 
     private static MethodInfo? FindMethod(Type type, string methodName, bool isStatic)
     {
-        var flags = BindingFlags.Public | BindingFlags.NonPublic | (isStatic ? BindingFlags.Static : BindingFlags.Instance);
-        try
+        return MethodCache.GetOrAdd(MethodCacheKey.ForName(type, methodName, isStatic), static key =>
         {
-            return type.GetMethod(methodName, flags);
-        }
-        catch (AmbiguousMatchException)
-        {
-            return type.GetMethods(flags).FirstOrDefault(method => method.Name == methodName);
-        }
+            try
+            {
+                return new CachedLookup<MethodInfo>(key.Type.GetMethod(key.MethodName, key.Flags));
+            }
+            catch (AmbiguousMatchException)
+            {
+                return new CachedLookup<MethodInfo>(key.Type.GetMethods(key.Flags).FirstOrDefault(method => method.Name == key.MethodName));
+            }
+        }).Value;
     }
 
     private static MethodInfo? FindMethod(Type type, string methodName, int argCount, bool isStatic)
     {
-        var flags = BindingFlags.Public | BindingFlags.NonPublic | (isStatic ? BindingFlags.Static : BindingFlags.Instance);
-        return type
-            .GetMethods(flags)
-            .FirstOrDefault(method => method.Name == methodName && method.GetParameters().Length == argCount);
+        return MethodCache.GetOrAdd(MethodCacheKey.ForCount(type, methodName, isStatic, argCount), static key =>
+        {
+            return new CachedLookup<MethodInfo>(key.Type
+                .GetMethods(key.Flags)
+                .FirstOrDefault(method => method.Name == key.MethodName && method.GetParameters().Length == key.ArgumentCount));
+        }).Value;
     }
 
     private static MethodInfo? FindMethod(Type type, string methodName, object?[] args, bool isStatic)
     {
-        var flags = BindingFlags.Public | BindingFlags.NonPublic | (isStatic ? BindingFlags.Static : BindingFlags.Instance);
-        foreach (var method in type.GetMethods(flags).Where(method => method.Name == methodName))
+        return MethodCache.GetOrAdd(MethodCacheKey.ForArguments(type, methodName, isStatic, args), key =>
         {
-            var parameters = method.GetParameters();
-            if (parameters.Length != args.Length) continue;
-            if (ArgumentsAreCompatible(parameters, args)) return method;
-        }
+            foreach (var method in key.Type.GetMethods(key.Flags).Where(method => method.Name == key.MethodName))
+            {
+                var parameters = method.GetParameters();
+                if (parameters.Length != args.Length) continue;
+                if (ArgumentsAreCompatible(parameters, args)) return new CachedLookup<MethodInfo>(method);
+            }
 
-        return null;
+            return new CachedLookup<MethodInfo>(null);
+        }).Value;
     }
 
     private static bool ArgumentsAreCompatible(IReadOnlyList<ParameterInfo> parameters, IReadOnlyList<object?> args)
@@ -489,5 +522,50 @@ internal static class RuntimeReflectionUtility
         }
 
         return true;
+    }
+
+    private sealed class CachedLookup<T> where T : class
+    {
+        public CachedLookup(T? value)
+        {
+            Value = value;
+        }
+
+        public T? Value { get; }
+    }
+
+    private readonly record struct MemberCacheKey(Type Type, string Name, BindingFlags Flags);
+
+    private readonly record struct MethodCacheKey(
+        Type Type,
+        string MethodName,
+        BindingFlags Flags,
+        int? ArgumentCount,
+        string ArgumentSignature)
+    {
+        public static MethodCacheKey ForName(Type type, string methodName, bool isStatic)
+        {
+            return new MethodCacheKey(type, methodName, BuildFlags(isStatic), null, "");
+        }
+
+        public static MethodCacheKey ForCount(Type type, string methodName, bool isStatic, int argumentCount)
+        {
+            return new MethodCacheKey(type, methodName, BuildFlags(isStatic), argumentCount, "");
+        }
+
+        public static MethodCacheKey ForArguments(Type type, string methodName, bool isStatic, IReadOnlyList<object?> args)
+        {
+            return new MethodCacheKey(type, methodName, BuildFlags(isStatic), args.Count, BuildArgumentSignature(args));
+        }
+
+        private static BindingFlags BuildFlags(bool isStatic)
+        {
+            return BindingFlags.Public | BindingFlags.NonPublic | (isStatic ? BindingFlags.Static : BindingFlags.Instance);
+        }
+
+        private static string BuildArgumentSignature(IReadOnlyList<object?> args)
+        {
+            return string.Join("|", args.Select(arg => arg?.GetType().AssemblyQualifiedName ?? "<null>"));
+        }
     }
 }
