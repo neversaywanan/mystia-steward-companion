@@ -2,15 +2,15 @@ import { useEffect, useMemo } from 'react';
 import { Card, CardContent, EmptyRow, EmptyState, ListPanel, SelectBox } from '@/components/ui-kit';
 import {
   beverageFavoriteKey,
-  compareFavoriteBeverageResults,
-  compareFavoriteRecipeResults,
   findBeverageFavorite,
   findRecipeFavorite,
   recipeFavoriteKey,
 } from '@/companion/domain/favorites';
-import { shouldKeepRecipeForCooker } from '@/companion/domain/cookers';
-import { compareRareBeveragesForService, compareRareRecipesForService } from '@/companion/domain/sorting';
 import {
+  buildRecommendationPlanSortContext,
+  buildRecommendationRuntimeContext,
+  deriveBeverageRowsFromPlans,
+  deriveRecipeRowsFromPlans,
   isOrderableRareFoodTag,
   isSelectableRareCustomer,
   mergeRareCustomers,
@@ -19,9 +19,9 @@ import type { CompanionPreferences } from '@/companion/preferences';
 import type { FavoriteData, RecommendationStateSnapshot, RuntimeSets, ToggleBeverageFavorite, ToggleRecipeFavorite } from '@/companion/types';
 import { BeverageRecommendationRow, PlaceToolbar, RecipeRecommendationRow, RuntimeUnavailable } from '@/companion/pages/shared';
 import { DENSE_THREE_COLUMN_GRID, DENSE_TWO_COLUMN_GRID, MAX_RECOMMENDATION_ROWS, RECOMMENDATION_SCROLL_AREA } from '@/companion/pages/shared-constants';
-import { getRareCustomersByPlace, rankBeveragesForRare, rankRecipesForRare } from '@/lib/rare-recommend';
-import { buildRecommendationDataIndexes, type RecommendationDataSet } from '@/lib/recommendation-data';
+import { buildRecommendationDataIndexes, getRareCustomersByPlace, type RecommendationDataSet } from '@/lib/recommendation-data';
 import type { ICustomerRare, TPlace } from '@/lib/types';
+import { buildRareOrderPlans } from '@/recommendation-engine';
 
 export function ModRarePanel({
   runtime,
@@ -117,48 +117,31 @@ export function ModRarePanel({
     selectedCustomer,
   ]);
 
-  const recipes = useMemo(() => {
+  const plans = useMemo(() => {
     if (!runtime || !runtimeSets || !selectedCustomer || !foodTag || !beverageTag) return [];
-    return rankRecipesForRare(
-      selectedCustomer,
-      foodTag,
-      beverageTag,
-      runtimeSets.recipeIds,
-      runtimeSets.ingredientIds,
-      new Set<number>(),
-      runtime.popularFoodTag,
-      runtime.popularHateFoodTag,
-      4,
-      runtimeSets.ownedIngredientQty,
-      runtime.famousShopEnabled,
-      {},
+    return buildRareOrderPlans({
       data,
-    )
-      .filter((recipe) => shouldKeepRecipeForCooker(recipe, runtimeSets, preferences.filterMissingCookers))
-      .sort((a, b) => compareRareRecipesForService(
-        a,
-        b,
-        runtimeSets.ownedIngredientQty,
-        preferences.recipeSortRules,
-        runtimeSets,
-        dataIndexes,
-      ))
-      .sort((a, b) => compareFavoriteRecipeResults(a, b, favorites, selectedCustomer.id, foodTag))
+      customer: selectedCustomer,
+      requiredFoodTag: foodTag,
+      requiredBeverageTag: beverageTag,
+      context: buildRecommendationRuntimeContext(runtime, runtimeSets, preferences, data),
+      sortProfile: preferences.recommendationSortProfile,
+      sortContext: buildRecommendationPlanSortContext(favorites, selectedCustomer.id, foodTag, beverageTag),
+      limit: MAX_RECOMMENDATION_ROWS * 4,
+    });
+  }, [beverageTag, data, favorites, foodTag, preferences, runtime, runtimeSets, selectedCustomer]);
+
+  const recipes = useMemo(() => {
+    if (!selectedCustomer || !foodTag) return [];
+    return deriveRecipeRowsFromPlans(plans, true)
       .slice(0, MAX_RECOMMENDATION_ROWS);
-  }, [beverageTag, data, dataIndexes, favorites, foodTag, preferences, runtime, runtimeSets, selectedCustomer]);
+  }, [foodTag, plans, selectedCustomer]);
 
   const beverages = useMemo(() => {
-    if (!runtimeSets || !selectedCustomer || !beverageTag) return [];
-    return rankBeveragesForRare(selectedCustomer, beverageTag, runtimeSets.beverageIds, data)
-      .sort((a, b) => compareRareBeveragesForService(
-        a,
-        b,
-        runtimeSets.ownedBeverageQty,
-        preferences.beverageSortRules,
-      ))
-      .sort((a, b) => compareFavoriteBeverageResults(a, b, favorites, selectedCustomer.id, beverageTag))
+    if (!selectedCustomer || !beverageTag) return [];
+    return deriveBeverageRowsFromPlans(plans, true)
       .slice(0, MAX_RECOMMENDATION_ROWS);
-  }, [beverageTag, data, favorites, preferences.beverageSortRules, runtimeSets, selectedCustomer]);
+  }, [beverageTag, plans, selectedCustomer]);
 
   if (!runtime || !runtimeSets) return <RuntimeUnavailable />;
 

@@ -1,0 +1,66 @@
+import { MultiSelect as MantineMultiSelect } from '@mantine/core';
+import type { MultiSelectProps as MantineMultiSelectProps } from '@mantine/core';
+
+import { cn } from '@/lib/utils';
+
+type MultiSelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+};
+
+type MultiSelectBoxProps = Omit<MantineMultiSelectProps, 'data' | 'value' | 'onChange'> & {
+  value: string[];
+  options: MultiSelectOption[];
+  onValueChange: (value: string[]) => void;
+  inputClassName?: string;
+  dropdownClassName?: string;
+  optionClassName?: string;
+};
+
+function MultiSelectBox({
+  className,
+  inputClassName,
+  dropdownClassName,
+  optionClassName,
+  value,
+  options,
+  onValueChange,
+  placeholder,
+  size = 'sm',
+  searchable = true,
+  clearable = true,
+  ...props
+}: MultiSelectBoxProps) {
+  return (
+    <MantineMultiSelect
+      data-slot="multi-select"
+      value={value}
+      data={options}
+      placeholder={placeholder}
+      searchable={searchable}
+      clearable={clearable}
+      checkIconPosition="right"
+      maxDropdownHeight={280}
+      nothingFoundMessage="无匹配项"
+      size={size}
+      className={cn('steward-multi-select', className)}
+      classNames={{
+        input: cn('steward-select-input', inputClassName),
+        inputField: 'steward-multi-select-field',
+        pillsList: 'steward-multi-select-pills',
+        dropdown: cn('steward-select-dropdown', dropdownClassName),
+        option: cn('steward-select-option', optionClassName),
+      }}
+      comboboxProps={{
+        withinPortal: true,
+        middlewares: { flip: true, shift: true },
+      }}
+      onChange={(nextValue) => onValueChange(nextValue.map(String))}
+      {...props}
+    />
+  );
+}
+
+export { MultiSelectBox };
+export type { MultiSelectBoxProps, MultiSelectOption };

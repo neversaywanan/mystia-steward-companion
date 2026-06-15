@@ -1,4 +1,11 @@
 import { isTauriRuntime } from '@/lib/tauri-runtime';
+import {
+  normalizeRecommendationSortProfile,
+  serializeRecommendationSortProfile,
+  type RecommendationBudgetPolicy,
+  type RecommendationExclusions,
+  type RecommendationSortProfile,
+} from '@/recommendation-engine';
 
 const STORAGE_PREFIX = 'mystia-steward-companion';
 
@@ -35,9 +42,11 @@ const PRIORITIZE_MISSION_RECIPES_STORAGE_KEY = `${STORAGE_PREFIX}-prioritize-mis
 const GAME_UI_PINNING_STORAGE_KEY = `${STORAGE_PREFIX}-game-ui-pinning`;
 const COOKER_HIGHLIGHT_STORAGE_KEY = `${STORAGE_PREFIX}-cooker-highlight`;
 const SHOW_DEBUG_DETAILS_STORAGE_KEY = `${STORAGE_PREFIX}-show-debug-details`;
-const RECIPE_SORT_RULES_STORAGE_KEY = `${STORAGE_PREFIX}-recipe-sort-rules`;
-const BEVERAGE_SORT_RULES_STORAGE_KEY = `${STORAGE_PREFIX}-beverage-sort-rules`;
 const SERVICE_ORDER_SORT_MODE_STORAGE_KEY = `${STORAGE_PREFIX}-service-order-sort-mode`;
+const RECOMMENDATION_SORT_PROFILE_STORAGE_KEY = `${STORAGE_PREFIX}-recommendation-sort-profile`;
+const RECOMMENDATION_BUDGET_POLICY_STORAGE_KEY = `${STORAGE_PREFIX}-recommendation-budget-policy`;
+const EXCLUDED_INGREDIENT_IDS_STORAGE_KEY = `${STORAGE_PREFIX}-excluded-ingredient-ids`;
+const EXCLUDED_BEVERAGE_IDS_STORAGE_KEY = `${STORAGE_PREFIX}-excluded-beverage-ids`;
 
 export const MAX_FOCUS_RECOMMENDATION_ROWS = 20;
 export const DEFAULT_FOCUS_RECOMMENDATION_ROWS = 8;
@@ -63,68 +72,13 @@ export const MAX_AUTO_STEP_RETRIES_LIMIT = 10;
 export const DEFAULT_AUTO_ROLLBACKS = 2;
 export const MIN_AUTO_ROLLBACKS = 0;
 export const MAX_AUTO_ROLLBACKS_LIMIT = 5;
+export const DEFAULT_RECOMMENDATION_EXCLUSIONS: RecommendationExclusions = {
+  excludedIngredientIds: [],
+  excludedBeverageIds: [],
+};
 
 export type FocusSwitchBehavior = 'hide' | 'keep-visible';
 export type ServiceOrderSortMode = 'ordered' | 'guest';
-export type SortDirection = 'asc' | 'desc';
-export type RecipeSortKey =
-  | 'requiredTag'
-  | 'foodScore'
-  | 'rating'
-  | 'extraCount'
-  | 'resourcePressure'
-  | 'recipePrice'
-  | 'extraCost'
-  | 'baseCost'
-  | 'totalCost'
-  | 'profit'
-  | 'cookerAvailable'
-  | 'recipeId';
-export type BeverageSortKey =
-  | 'requiredTag'
-  | 'bevScore'
-  | 'beveragePrice'
-  | 'ownedQuantity'
-  | 'beverageId';
-
-export interface SortRule<K extends string> {
-  key: K;
-  direction: SortDirection;
-  enabled: boolean;
-}
-
-export interface SortOption<K extends string> {
-  key: K;
-  label: string;
-  defaultDirection: SortDirection;
-  defaultEnabled: boolean;
-}
-
-export const RECIPE_SORT_OPTIONS: SortOption<RecipeSortKey>[] = [
-  { key: 'requiredTag', label: '满足点单 Tag', defaultDirection: 'desc', defaultEnabled: true },
-  { key: 'foodScore', label: '料理分数', defaultDirection: 'desc', defaultEnabled: true },
-  { key: 'extraCount', label: '加料数量', defaultDirection: 'asc', defaultEnabled: true },
-  { key: 'resourcePressure', label: '资源压力', defaultDirection: 'asc', defaultEnabled: true },
-  { key: 'recipePrice', label: '料理售价', defaultDirection: 'desc', defaultEnabled: true },
-  { key: 'extraCost', label: '加料成本', defaultDirection: 'asc', defaultEnabled: true },
-  { key: 'recipeId', label: '料理 ID', defaultDirection: 'asc', defaultEnabled: true },
-  { key: 'rating', label: '推荐评级', defaultDirection: 'desc', defaultEnabled: false },
-  { key: 'baseCost', label: '基础成本', defaultDirection: 'asc', defaultEnabled: false },
-  { key: 'totalCost', label: '总成本', defaultDirection: 'asc', defaultEnabled: false },
-  { key: 'profit', label: '预计利润', defaultDirection: 'desc', defaultEnabled: false },
-  { key: 'cookerAvailable', label: '当前厨具可制作', defaultDirection: 'desc', defaultEnabled: false },
-];
-
-export const BEVERAGE_SORT_OPTIONS: SortOption<BeverageSortKey>[] = [
-  { key: 'requiredTag', label: '满足点单 Tag', defaultDirection: 'desc', defaultEnabled: true },
-  { key: 'bevScore', label: '酒水分数', defaultDirection: 'desc', defaultEnabled: true },
-  { key: 'beveragePrice', label: '酒水售价', defaultDirection: 'desc', defaultEnabled: true },
-  { key: 'beverageId', label: '酒水 ID', defaultDirection: 'asc', defaultEnabled: true },
-  { key: 'ownedQuantity', label: '当前库存数量', defaultDirection: 'desc', defaultEnabled: false },
-];
-
-export const DEFAULT_RECIPE_SORT_RULES = buildDefaultSortRules(RECIPE_SORT_OPTIONS);
-export const DEFAULT_BEVERAGE_SORT_RULES = buildDefaultSortRules(BEVERAGE_SORT_OPTIONS);
 
 export interface CompanionPreferences {
   backgroundOpacity: number;
@@ -159,9 +113,10 @@ export interface CompanionPreferences {
   gameUiPinningEnabled: boolean;
   cookerHighlightEnabled: boolean;
   showDebugDetails: boolean;
-  recipeSortRules: SortRule<RecipeSortKey>[];
-  beverageSortRules: SortRule<BeverageSortKey>[];
   serviceOrderSortMode: ServiceOrderSortMode;
+  recommendationSortProfile: RecommendationSortProfile;
+  recommendationBudgetPolicy: RecommendationBudgetPolicy;
+  recommendationExclusions: RecommendationExclusions;
 }
 
 export function normalizeEditableQuantity(value: number) {
@@ -213,66 +168,11 @@ export function readStoredCompanionPreferences(): CompanionPreferences {
     gameUiPinningEnabled: readStoredBoolean(GAME_UI_PINNING_STORAGE_KEY, false),
     cookerHighlightEnabled: readStoredBoolean(COOKER_HIGHLIGHT_STORAGE_KEY, false),
     showDebugDetails: readStoredBoolean(SHOW_DEBUG_DETAILS_STORAGE_KEY, false),
-    recipeSortRules: readStoredSortRules(RECIPE_SORT_RULES_STORAGE_KEY, RECIPE_SORT_OPTIONS),
-    beverageSortRules: readStoredSortRules(BEVERAGE_SORT_RULES_STORAGE_KEY, BEVERAGE_SORT_OPTIONS),
     serviceOrderSortMode: readStoredServiceOrderSortMode(),
+    recommendationSortProfile: readStoredRecommendationSortProfile(),
+    recommendationBudgetPolicy: readStoredRecommendationBudgetPolicy(),
+    recommendationExclusions: readStoredRecommendationExclusions(),
   });
-}
-
-export function buildDefaultSortRules<K extends string>(options: SortOption<K>[]): SortRule<K>[] {
-  return options.map((option) => ({
-    key: option.key,
-    direction: option.defaultDirection,
-    enabled: option.defaultEnabled,
-  }));
-}
-
-export function normalizeSortRules<K extends string>(
-  value: unknown,
-  options: SortOption<K>[],
-): SortRule<K>[] {
-  if (!Array.isArray(value)) return buildDefaultSortRules(options);
-
-  const optionByKey = new Map(options.map((option) => [option.key, option]));
-  const usedKeys = new Set<K>();
-  const rules: SortRule<K>[] = [];
-
-  for (const item of value) {
-    if (!item || typeof item !== 'object') continue;
-    const record = item as Record<string, unknown>;
-    const key = record.key;
-    if (typeof key !== 'string') continue;
-    const option = optionByKey.get(key as K);
-    if (!option || usedKeys.has(option.key)) continue;
-
-    rules.push({
-      key: option.key,
-      direction: record.direction === 'asc' || record.direction === 'desc'
-        ? record.direction
-        : option.defaultDirection,
-      enabled: typeof record.enabled === 'boolean' ? record.enabled : option.defaultEnabled,
-    });
-    usedKeys.add(option.key);
-  }
-
-  for (const option of options) {
-    if (usedKeys.has(option.key)) continue;
-    rules.push({
-      key: option.key,
-      direction: option.defaultDirection,
-      enabled: option.defaultEnabled,
-    });
-  }
-
-  return rules;
-}
-
-export function serializeSortRules<K extends string>(rules: SortRule<K>[]): string {
-  return rules.map((rule) => `${rule.key}:${rule.enabled ? '1' : '0'}:${rule.direction}`).join(',');
-}
-
-export function getSortOptionLabel<K extends string>(options: SortOption<K>[], key: K): string {
-  return options.find((option) => option.key === key)?.label ?? key;
 }
 
 export function normalizeCompanionPreferences(
@@ -313,9 +213,10 @@ export function normalizeCompanionPreferences(
     gameUiPinningEnabled: Boolean(value.gameUiPinningEnabled),
     cookerHighlightEnabled: Boolean(value.cookerHighlightEnabled),
     showDebugDetails: Boolean(value.showDebugDetails),
-    recipeSortRules: normalizeSortRules(value.recipeSortRules, RECIPE_SORT_OPTIONS),
-    beverageSortRules: normalizeSortRules(value.beverageSortRules, BEVERAGE_SORT_OPTIONS),
     serviceOrderSortMode: value.serviceOrderSortMode === 'guest' ? 'guest' : 'ordered',
+    recommendationSortProfile: normalizeRecommendationSortProfile(value.recommendationSortProfile),
+    recommendationBudgetPolicy: normalizeRecommendationBudgetPolicy(value.recommendationBudgetPolicy),
+    recommendationExclusions: normalizeRecommendationExclusions(value.recommendationExclusions),
   };
 }
 
@@ -392,9 +293,20 @@ export function persistCompanionPreferences(preferences: CompanionPreferences) {
   localStorage.setItem(GAME_UI_PINNING_STORAGE_KEY, normalized.gameUiPinningEnabled ? '1' : '0');
   localStorage.setItem(COOKER_HIGHLIGHT_STORAGE_KEY, normalized.cookerHighlightEnabled ? '1' : '0');
   localStorage.setItem(SHOW_DEBUG_DETAILS_STORAGE_KEY, normalized.showDebugDetails ? '1' : '0');
-  localStorage.setItem(RECIPE_SORT_RULES_STORAGE_KEY, JSON.stringify(normalized.recipeSortRules));
-  localStorage.setItem(BEVERAGE_SORT_RULES_STORAGE_KEY, JSON.stringify(normalized.beverageSortRules));
   localStorage.setItem(SERVICE_ORDER_SORT_MODE_STORAGE_KEY, normalized.serviceOrderSortMode);
+  localStorage.setItem(
+    RECOMMENDATION_SORT_PROFILE_STORAGE_KEY,
+    serializeRecommendationSortProfile(normalized.recommendationSortProfile),
+  );
+  localStorage.setItem(RECOMMENDATION_BUDGET_POLICY_STORAGE_KEY, normalized.recommendationBudgetPolicy);
+  localStorage.setItem(
+    EXCLUDED_INGREDIENT_IDS_STORAGE_KEY,
+    JSON.stringify(normalized.recommendationExclusions.excludedIngredientIds),
+  );
+  localStorage.setItem(
+    EXCLUDED_BEVERAGE_IDS_STORAGE_KEY,
+    JSON.stringify(normalized.recommendationExclusions.excludedBeverageIds),
+  );
 }
 
 export function applyCompanionVisualPreferences(preferences: CompanionPreferences) {
@@ -453,15 +365,65 @@ function readStoredServiceOrderSortMode(): ServiceOrderSortMode {
   return value === 'guest' ? 'guest' : 'ordered';
 }
 
-function readStoredSortRules<K extends string>(key: string, options: SortOption<K>[]): SortRule<K>[] {
-  const raw = localStorage.getItem(key);
-  if (!raw) return buildDefaultSortRules(options);
+function readStoredRecommendationSortProfile(): RecommendationSortProfile {
+  const raw = localStorage.getItem(RECOMMENDATION_SORT_PROFILE_STORAGE_KEY);
+  if (!raw) return normalizeRecommendationSortProfile(null);
 
   try {
-    return normalizeSortRules(JSON.parse(raw) as unknown, options);
+    return normalizeRecommendationSortProfile(JSON.parse(raw) as unknown);
   } catch {
-    return buildDefaultSortRules(options);
+    return normalizeRecommendationSortProfile(null);
   }
+}
+
+function readStoredRecommendationBudgetPolicy(): RecommendationBudgetPolicy {
+  return normalizeRecommendationBudgetPolicy(localStorage.getItem(RECOMMENDATION_BUDGET_POLICY_STORAGE_KEY));
+}
+
+export function normalizeRecommendationBudgetPolicy(value: unknown): RecommendationBudgetPolicy {
+  return value === 'warn' || value === 'ignore' ? value : 'block';
+}
+
+function readStoredRecommendationExclusions(): RecommendationExclusions {
+  return normalizeRecommendationExclusions({
+    excludedIngredientIds: readStoredIdArray(EXCLUDED_INGREDIENT_IDS_STORAGE_KEY),
+    excludedBeverageIds: readStoredIdArray(EXCLUDED_BEVERAGE_IDS_STORAGE_KEY),
+  });
+}
+
+export function normalizeRecommendationExclusions(value: unknown): RecommendationExclusions {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return DEFAULT_RECOMMENDATION_EXCLUSIONS;
+  const exclusions = value as Partial<RecommendationExclusions>;
+  return {
+    excludedIngredientIds: normalizeStoredIds(exclusions.excludedIngredientIds),
+    excludedBeverageIds: normalizeStoredIds(exclusions.excludedBeverageIds),
+  };
+}
+
+function readStoredIdArray(key: string): number[] {
+  const raw = localStorage.getItem(key);
+  if (!raw) return [];
+
+  try {
+    return normalizeStoredIds(JSON.parse(raw) as unknown);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeStoredIds(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<number>();
+  const ids: number[] = [];
+  for (const raw of value) {
+    const id = Number(raw);
+    if (!Number.isFinite(id) || id < 0) continue;
+    const normalized = Math.trunc(id);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    ids.push(normalized);
+  }
+  return ids.sort((left, right) => left - right);
 }
 
 export function clampInteger(value: number, min: number, max: number, fallback: number) {

@@ -264,10 +264,11 @@ export function ModWorkbench() {
       recommendationCacheRef.current,
       favorites,
       companionPreferences,
+      night?.activeRareGuests ?? [],
       snapshot?.runtimeMissions?.serveTargets ?? [],
       recommendationData,
     ),
-    [night?.orders, runtime, rareCustomersById, favorites, companionPreferences, snapshot?.runtimeMissions?.serveTargets, recommendationData],
+    [night?.orders, night?.activeRareGuests, runtime, rareCustomersById, favorites, companionPreferences, snapshot?.runtimeMissions?.serveTargets, recommendationData],
   );
   const gameUiPinningTarget = useMemo(
     () => companionPreferences.gameUiPinningEnabled || companionPreferences.cookerHighlightEnabled
@@ -1348,6 +1349,7 @@ export function ModWorkbench() {
             endpoint={normalizedEndpoint}
             apiToken={apiToken}
             preferences={companionPreferences}
+            data={recommendationData}
             themeMode={themeMode}
             serviceFocusCompact={serviceFocusCompact}
             onPreferenceChange={updateCompanionPreferences}

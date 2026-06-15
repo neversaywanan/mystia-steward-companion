@@ -51,6 +51,8 @@ public sealed class RuntimeDataCatalog
     public List<NormalCustomer> NormalCustomers { get; init; } = new();
     public List<RareCustomer> RareCustomers { get; init; } = new();
     public Dictionary<string, string> FoodTagIdMap { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, string> BeverageTagIdMap { get; init; } = new(StringComparer.Ordinal);
+    public List<TagPriorityRule> TagPriorityRules { get; init; } = new();
 
     public static RuntimeDataCatalog Empty(string status)
     {
@@ -60,6 +62,13 @@ public sealed class RuntimeDataCatalog
             Status = status,
         };
     }
+}
+
+public sealed class TagPriorityRule
+{
+    public int Id { get; init; }
+    public List<int> TagIds { get; init; } = new();
+    public List<string> Tags { get; init; } = new();
 }
 
 public sealed class PlacedCookerInfo
@@ -116,15 +125,6 @@ public sealed class RuntimeRareCustomer
     }
 }
 
-public enum Rating
-{
-    ExGood,
-    Good,
-    Normal,
-    Bad,
-    ExBad,
-}
-
 public sealed class CustomerScore
 {
     public string Name { get; init; } = "";
@@ -146,34 +146,6 @@ public sealed class NormalBeverageResult
     public Beverage Beverage { get; init; } = new();
     public List<CustomerScore> CustomerScores { get; init; } = new();
     public int TotalCoverage { get; init; }
-    public List<string> MatchedTags { get; init; } = new();
-}
-
-public sealed class RareRecipeResult
-{
-    public Recipe Recipe { get; init; } = new();
-    public List<Ingredient> ExtraIngredients { get; init; } = new();
-    public Dictionary<int, List<string>> ExtraIngredientReasonTags { get; init; } = new();
-    public bool IsEasterPriority { get; init; }
-    public bool IsEasterPinned { get; init; }
-    public bool IsEasterRecipeHighlight { get; init; }
-    public List<int> EasterHighlightExtraIngredientIds { get; init; } = new();
-    public string? EasterReason { get; init; }
-    public int? EasterScoreFloor { get; init; }
-    public List<string> AllTags { get; init; } = new();
-    public List<string> CancelledTags { get; init; } = new();
-    public int FoodScore { get; init; }
-    public bool MeetsRequiredFood { get; init; }
-    public Rating Rating { get; init; }
-    public int BaseCost { get; init; }
-    public int ExtraCost { get; init; }
-}
-
-public sealed class RareBeverageResult
-{
-    public Beverage Beverage { get; init; } = new();
-    public int BevScore { get; init; }
-    public bool MeetsRequiredBev { get; init; }
     public List<string> MatchedTags { get; init; } = new();
 }
 

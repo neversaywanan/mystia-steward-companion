@@ -1,88 +1,6 @@
 import type { FavoriteBeverageEntry, FavoriteData, FavoriteRecipeEntry } from '@/companion/types';
 import type { IRareBeverageResult, IRareRecipeResult } from '@/lib/types';
 
-export function promoteFavoriteRecipes(
-  rows: IRareRecipeResult[],
-  favorites: FavoriteData,
-  customerId: number,
-  foodTag: string,
-): IRareRecipeResult[] {
-  const matchingFavorites = favorites.recipes
-    .filter((favorite) => favorite.customerId === customerId && favorite.foodTag === foodTag)
-    .sort(compareFavoriteUpdatedDesc);
-  if (matchingFavorites.length === 0) return rows;
-
-  const used = new Set<string>();
-  const promoted: IRareRecipeResult[] = [];
-  for (const favorite of matchingFavorites) {
-    const row = rows.find((candidate) => isRecipeFavoriteMatch(favorite, candidate));
-    if (!row) continue;
-    const key = recipeResultKey(row);
-    if (used.has(key)) continue;
-    used.add(key);
-    promoted.push(row);
-  }
-
-  if (promoted.length === 0) return rows;
-  return [...promoted, ...rows.filter((row) => !used.has(recipeResultKey(row)))];
-}
-
-export function promoteFavoriteBeverages(
-  rows: IRareBeverageResult[],
-  favorites: FavoriteData,
-  customerId: number,
-  beverageTag: string,
-): IRareBeverageResult[] {
-  const matchingFavorites = favorites.beverages
-    .filter((favorite) => favorite.customerId === customerId && favorite.beverageTag === beverageTag)
-    .sort(compareFavoriteUpdatedDesc);
-  if (matchingFavorites.length === 0) return rows;
-
-  const used = new Set<number>();
-  const promoted: IRareBeverageResult[] = [];
-  for (const favorite of matchingFavorites) {
-    const row = rows.find((candidate) => candidate.beverage.id === favorite.beverageId);
-    if (!row || used.has(row.beverage.id)) continue;
-    used.add(row.beverage.id);
-    promoted.push(row);
-  }
-
-  if (promoted.length === 0) return rows;
-  return [...promoted, ...rows.filter((row) => !used.has(row.beverage.id))];
-}
-
-export function compareFavoriteRecipeResults(
-  left: IRareRecipeResult,
-  right: IRareRecipeResult,
-  favorites: FavoriteData,
-  customerId: number,
-  foodTag: string,
-): number {
-  const leftFavorite = findRecipeFavorite(favorites, customerId, foodTag, left);
-  const rightFavorite = findRecipeFavorite(favorites, customerId, foodTag, right);
-  if (!leftFavorite && !rightFavorite) return 0;
-  if (leftFavorite && !rightFavorite) return -1;
-  if (!leftFavorite && rightFavorite) return 1;
-  if (!leftFavorite || !rightFavorite) return 0;
-  return compareFavoriteUpdatedDesc(leftFavorite, rightFavorite);
-}
-
-export function compareFavoriteBeverageResults(
-  left: IRareBeverageResult,
-  right: IRareBeverageResult,
-  favorites: FavoriteData,
-  customerId: number,
-  beverageTag: string,
-): number {
-  const leftFavorite = findBeverageFavorite(favorites, customerId, beverageTag, left);
-  const rightFavorite = findBeverageFavorite(favorites, customerId, beverageTag, right);
-  if (!leftFavorite && !rightFavorite) return 0;
-  if (leftFavorite && !rightFavorite) return -1;
-  if (!leftFavorite && rightFavorite) return 1;
-  if (!leftFavorite || !rightFavorite) return 0;
-  return compareFavoriteUpdatedDesc(leftFavorite, rightFavorite);
-}
-
 export function findRecipeFavorite(
   favorites: FavoriteData,
   customerId: number,
@@ -147,10 +65,4 @@ export function normalizeIdList(ids: number[]): number[] {
 function isRecipeFavoriteMatch(favorite: FavoriteRecipeEntry, recipe: IRareRecipeResult): boolean {
   return favorite.recipeId === recipe.recipe.id
     && normalizeIdList(favorite.extraIngredientIds).join(',') === normalizeIdList(recipe.extraIngredients.map((ingredient) => ingredient.id)).join(',');
-}
-
-function compareFavoriteUpdatedDesc<T extends { updatedAtUtc: string }>(left: T, right: T): number {
-  const leftTime = Date.parse(left.updatedAtUtc || '');
-  const rightTime = Date.parse(right.updatedAtUtc || '');
-  return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
 }

@@ -116,6 +116,8 @@ internal sealed class RuntimeStaticDataCatalog
         var runtimeData = BuildRuntimeDataCatalog(
             status,
             foodTags,
+            beverageTags,
+            tagLines,
             coreLines,
             guestLines,
             izakayaLines);
@@ -144,6 +146,8 @@ internal sealed class RuntimeStaticDataCatalog
     private static RuntimeDataCatalog BuildRuntimeDataCatalog(
         string status,
         IReadOnlyDictionary<int, string> foodTags,
+        IReadOnlyDictionary<int, string> beverageTags,
+        IReadOnlyList<string> tagLines,
         IReadOnlyList<string> coreLines,
         IReadOnlyList<string> guestLines,
         IReadOnlyList<string> izakayaLines)
@@ -157,6 +161,7 @@ internal sealed class RuntimeStaticDataCatalog
             var normalRows = ParseSectionRows(guestLines, "NormalGuests").ToList();
             var rareRows = ParseSectionRows(guestLines, "SpecialGuests").ToList();
             var izakayaPlaceRows = ParseSectionRows(izakayaLines, "IzakayaGuestPlaces").ToList();
+            var tagRuleRows = ParseSectionRows(tagLines, "TagRules").ToList();
             var normalPlacesById = BuildRuntimePlacesByGuestId(izakayaPlaceRows, "normal");
             var rarePlacesById = BuildRuntimePlacesByGuestId(izakayaPlaceRows, "rare");
 
@@ -299,25 +304,54 @@ internal sealed class RuntimeStaticDataCatalog
                     pair => pair.Key.ToString(CultureInfo.InvariantCulture),
                     pair => NormalizeTagName(pair.Value),
                     StringComparer.Ordinal);
+            var beverageTagIdMap = beverageTags
+                .OrderBy(pair => pair.Key)
+                .ToDictionary(
+                    pair => pair.Key.ToString(CultureInfo.InvariantCulture),
+                    pair => NormalizeTagName(pair.Value),
+                    StringComparer.Ordinal);
+            var tagPriorityRules = tagRuleRows
+                .Select(row =>
+                {
+                    var tagIds = ParseOrderedIntCollection(Field(row, "rules"));
+                    return new TagPriorityRule
+                    {
+                        Id = ParseInt(row, "id") ?? -1,
+                        TagIds = tagIds,
+                        Tags = tagIds
+                            .Select(id => foodTags.TryGetValue(id, out var tagName) ? NormalizeTagName(tagName) : "")
+                            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+                            .Distinct(StringComparer.Ordinal)
+                            .ToList(),
+                    };
+                })
+                .Where(rule => rule.Id >= 0 && rule.TagIds.Count > 0 && rule.Tags.Count > 0)
+                .GroupBy(rule => rule.Id)
+                .Select(group => group.First())
+                .OrderBy(rule => rule.Id)
+                .ToList();
 
             var isComplete = ingredients.Count > 0
                 && beverages.Count > 0
                 && recipes.Count > 0
                 && normalCustomers.Count > 0
                 && rareCustomers.Count > 0
-                && foodTagIdMap.Count > 0;
+                && foodTagIdMap.Count > 0
+                && beverageTagIdMap.Count > 0;
 
             return new RuntimeDataCatalog
             {
                 IsComplete = isComplete,
                 Source = "game-runtime",
-                Status = $"runtimeData=ingredients:{ingredients.Count},beverages:{beverages.Count},recipes:{recipes.Count},normal:{normalCustomers.Count},rare:{rareCustomers.Count}; {status}",
+                Status = $"runtimeData=ingredients:{ingredients.Count},beverages:{beverages.Count},recipes:{recipes.Count},normal:{normalCustomers.Count},rare:{rareCustomers.Count},tagRules:{tagPriorityRules.Count}; {status}",
                 Ingredients = ingredients,
                 Beverages = beverages,
                 Recipes = recipes,
                 NormalCustomers = normalCustomers,
                 RareCustomers = rareCustomers,
                 FoodTagIdMap = foodTagIdMap,
+                BeverageTagIdMap = beverageTagIdMap,
+                TagPriorityRules = tagPriorityRules,
             };
         }
         catch (Exception ex)
@@ -441,6 +475,14 @@ internal sealed class RuntimeStaticDataCatalog
 
     private static List<int> ParseIntCollection(string value)
     {
+        return ParseOrderedIntCollection(value)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+    }
+
+    private static List<int> ParseOrderedIntCollection(string value)
+    {
         var trimmed = value.Trim();
         if (string.IsNullOrWhiteSpace(trimmed)
             || string.Equals(trimmed, "[]", StringComparison.Ordinal)
@@ -469,8 +511,6 @@ internal sealed class RuntimeStaticDataCatalog
             })
             .Where(id => id.HasValue)
             .Select(id => id!.Value)
-            .Distinct()
-            .OrderBy(id => id)
             .ToList();
     }
 

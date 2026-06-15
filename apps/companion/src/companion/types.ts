@@ -4,10 +4,11 @@ import type {
   IRareBeverageResult,
   IRareRecipeResult,
 } from '@/lib/types';
+import type { RareOrderRecommendationPlan } from '@/recommendation-engine';
 
 export type ModTab = 'overview' | 'normal' | 'rare' | 'service' | 'tasks' | 'inventory' | 'help' | 'logs' | 'settings';
 export type OverviewTab = 'status' | 'inventory' | 'actions';
-export type SettingsTab = 'window' | 'recommendation' | 'sorting' | 'automation' | 'debug';
+export type SettingsTab = 'window' | 'recommendation' | 'automation' | 'debug';
 export type RareGuestInvitationScope = 'current' | 'all';
 export type MissionStatusFilter = 'available' | 'tracking' | 'fulfilled';
 
@@ -174,6 +175,7 @@ export interface RuntimeSets {
 
 export interface CachedRecommendation {
   customer: ICustomerRare;
+  plans: RareOrderRecommendationPlan[];
   recipes: IRareRecipeResult[];
   beverages: IRareBeverageResult[];
   preferenceRecipes: IRareRecipeResult[];

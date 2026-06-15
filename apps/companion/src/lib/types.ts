@@ -98,8 +98,6 @@ export interface ICustomerRare {
   };
 }
 
-export type TRating = 'ExGood' | 'Good' | 'Normal' | 'Bad' | 'ExBad';
-
 export interface ICustomerScore {
   name: string;
   score: number;
@@ -127,24 +125,15 @@ export interface IRareRecipeResult {
   missionPriority?: boolean;
   // 记录每个加料被选中的用途标签（例如 { 12: ['甜', '果味'] }）
   extraIngredientReasonTags: Record<number, string[]>;
-  isEasterPriority: boolean;
-  isEasterPinned: boolean;
-  isEasterRecipeHighlight: boolean;
-  easterHighlightExtraIngredientIds: number[];
-  easterReason: string | null;
-  easterScoreFloor: number | null;
   allTags: string[];
   cancelledTags: string[];
-  foodScore: number;
   meetsRequiredFood: boolean;
-  rating: TRating;
   baseCost: number;
   extraCost: number;
 }
 
 export interface IRareBeverageResult {
   beverage: IBeverage;
-  bevScore: number;
   meetsRequiredBev: boolean;
   matchedTags: string[];
 }

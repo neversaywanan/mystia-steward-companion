@@ -558,6 +558,8 @@ html::-webkit-scrollbar-thumb:hover,
 .steward-input-root,
 .steward-number-input-root,
 .steward-number-input-root .mantine-Input-wrapper,
+.steward-multi-select .mantine-Input-wrapper,
+.steward-multi-select,
 .steward-select .mantine-Input-wrapper,
 .steward-select {
   min-width: 0;
@@ -585,9 +587,34 @@ html::-webkit-scrollbar-thumb:hover,
   caret-color: var(--primary);
 }
 
+.steward-multi-select .steward-select-input {
+  display: flex;
+  align-items: center;
+}
+
+.steward-multi-select-pills {
+  min-height: calc(var(--steward-control-height-sm) - 0.25rem);
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.steward-multi-select-field {
+  height: var(--steward-control-line-sm);
+  min-height: var(--steward-control-line-sm);
+  align-self: center;
+  padding-block: 0;
+  line-height: var(--steward-control-line-sm);
+}
+
+.steward-multi-select-field::placeholder {
+  line-height: var(--steward-control-line-sm);
+}
+
 .steward-input-root[data-size='xs'],
 .steward-number-input-root[data-size='xs'],
 .steward-number-input-root .mantine-Input-wrapper[data-size='xs'],
+.steward-multi-select[data-size='xs'],
+.steward-multi-select .mantine-Input-wrapper[data-size='xs'],
 .steward-select[data-size='xs'],
 .steward-select .mantine-Input-wrapper[data-size='xs'] {
   --input-fz: var(--steward-control-font-xs) !important;
@@ -596,6 +623,8 @@ html::-webkit-scrollbar-thumb:hover,
 .steward-input-root[data-size='sm'],
 .steward-number-input-root[data-size='sm'],
 .steward-number-input-root .mantine-Input-wrapper[data-size='sm'],
+.steward-multi-select[data-size='sm'],
+.steward-multi-select .mantine-Input-wrapper[data-size='sm'],
 .steward-select[data-size='sm'],
 .steward-select .mantine-Input-wrapper[data-size='sm'] {
   --input-fz: var(--steward-control-font-sm) !important;
@@ -604,16 +633,22 @@ html::-webkit-scrollbar-thumb:hover,
 .steward-input-root[data-size='md'],
 .steward-number-input-root[data-size='md'],
 .steward-number-input-root .mantine-Input-wrapper[data-size='md'],
+.steward-multi-select[data-size='md'],
+.steward-multi-select .mantine-Input-wrapper[data-size='md'],
 .steward-select[data-size='md'],
 .steward-select .mantine-Input-wrapper[data-size='md'],
 .steward-input-root[data-size='lg'],
 .steward-number-input-root[data-size='lg'],
 .steward-number-input-root .mantine-Input-wrapper[data-size='lg'],
+.steward-multi-select[data-size='lg'],
+.steward-multi-select .mantine-Input-wrapper[data-size='lg'],
 .steward-select[data-size='lg'],
 .steward-select .mantine-Input-wrapper[data-size='lg'],
 .steward-input-root[data-size='xl'],
 .steward-number-input-root[data-size='xl'],
 .steward-number-input-root .mantine-Input-wrapper[data-size='xl'],
+.steward-multi-select[data-size='xl'],
+.steward-multi-select .mantine-Input-wrapper[data-size='xl'],
 .steward-select[data-size='xl'],
 .steward-select .mantine-Input-wrapper[data-size='xl'] {
   --input-fz: var(--steward-control-font-md) !important;

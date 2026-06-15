@@ -8,7 +8,9 @@ public sealed class DataRepository
         List<Beverage> beverages,
         List<NormalCustomer> normalCustomers,
         List<RareCustomer> rareCustomers,
-        Dictionary<string, string> foodTagIdMap)
+        Dictionary<string, string> foodTagIdMap,
+        Dictionary<string, string> beverageTagIdMap,
+        List<TagPriorityRule> tagPriorityRules)
     {
         Recipes = recipes;
         Ingredients = ingredients;
@@ -16,6 +18,8 @@ public sealed class DataRepository
         NormalCustomers = normalCustomers;
         RareCustomers = rareCustomers;
         FoodTagIdMap = foodTagIdMap;
+        BeverageTagIdMap = beverageTagIdMap;
+        TagPriorityRules = tagPriorityRules;
         IngredientsByName = ingredients
             .Where(i => !string.IsNullOrWhiteSpace(i.Name))
             .GroupBy(i => i.Name, StringComparer.Ordinal)
@@ -38,6 +42,8 @@ public sealed class DataRepository
     public IReadOnlyList<NormalCustomer> NormalCustomers { get; }
     public IReadOnlyList<RareCustomer> RareCustomers { get; }
     public IReadOnlyDictionary<string, string> FoodTagIdMap { get; }
+    public IReadOnlyDictionary<string, string> BeverageTagIdMap { get; }
+    public IReadOnlyList<TagPriorityRule> TagPriorityRules { get; }
     public IReadOnlyDictionary<string, Ingredient> IngredientsByName { get; }
     public IReadOnlyDictionary<int, Ingredient> IngredientsById { get; }
     public IReadOnlyDictionary<int, int> RecipeIdToId { get; }
@@ -52,7 +58,9 @@ public sealed class DataRepository
             catalog.Beverages.ToList(),
             catalog.NormalCustomers.ToList(),
             catalog.RareCustomers.ToList(),
-            new Dictionary<string, string>(catalog.FoodTagIdMap, StringComparer.Ordinal));
+            new Dictionary<string, string>(catalog.FoodTagIdMap, StringComparer.Ordinal),
+            new Dictionary<string, string>(catalog.BeverageTagIdMap, StringComparer.Ordinal),
+            catalog.TagPriorityRules.ToList());
     }
 
     public static DataRepository Empty()
@@ -63,7 +71,9 @@ public sealed class DataRepository
             new List<Beverage>(),
             new List<NormalCustomer>(),
             new List<RareCustomer>(),
-            new Dictionary<string, string>(StringComparer.Ordinal));
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            new List<TagPriorityRule>());
     }
 
     public IReadOnlyList<NormalCustomer> GetNormalCustomersByPlace(string place)

@@ -383,12 +383,13 @@ export function selectOrderPreparationCandidates(
     const item = row.item;
     const label = formatRareAutomationPrefix(item);
     const state = states.get(buildAutoOrderKey(item));
-    const recipePick = pickRecipeForPreparation(item, favorites, preferences);
-    const beveragePick = pickBeverageForPreparation(item, favorites, preferences);
-    const recipeTarget = state?.recipeTarget ?? (recipePick.ok
-      ? buildRareRecipeTarget(item, recipePick.recipe, recipePick.favorite, recipePick.preferenceFallback)
+    const planPick = pickPlanForPreparation(item, favorites, preferences);
+    const recipeTarget = state?.recipeTarget ?? (planPick.recipe
+      ? buildRareRecipeTarget(item, planPick.recipe, planPick.recipeFavorite, planPick.preferenceFallback)
       : null);
-    const beverageTarget = state?.beverageTarget ?? (beveragePick.ok ? buildRareBeverageTarget(beveragePick.beverage, beveragePick.favorite) : null);
+    const beverageTarget = state?.beverageTarget ?? (planPick.beverage
+      ? buildRareBeverageTarget(planPick.beverage, planPick.beverageFavorite)
+      : null);
 
     if (!recipeTarget && (preferences.autoPrepStartCooking || preferences.autoPrepFavoritesOnly)) {
       messages.push(`${label}\n${preferences.autoPrepFavoritesOnly ? '没有匹配的收藏料理。' : '没有可用的推荐料理。'}`);
@@ -402,12 +403,12 @@ export function selectOrderPreparationCandidates(
     selections.push({
       ok: true,
       item,
-      recipe: recipePick.ok ? recipePick.recipe : null,
-      beverage: beveragePick.ok ? beveragePick.beverage : null,
+      recipe: planPick.recipe,
+      beverage: planPick.beverage,
       recipeTarget,
       beverageTarget,
-      recipeFavorite: recipePick.ok ? recipePick.favorite : null,
-      beverageFavorite: beveragePick.ok ? beveragePick.favorite : null,
+      recipeFavorite: planPick.recipeFavorite,
+      beverageFavorite: planPick.beverageFavorite,
     });
     if (selections.length >= limit) break;
   }
@@ -885,46 +886,76 @@ function formatRemainingAction(startedAtMs: number, now: number, timeoutMs: numb
   return `${label}约 ${Math.ceil(remainingMs / 1000)} 秒`;
 }
 
-function pickRecipeForPreparation(
+function pickPlanForPreparation(
   item: OrderRecommendation,
   favorites: FavoriteData,
   preferences: CompanionPreferences,
-) {
-  if (!preferences.autoPrepStartCooking && !preferences.autoPrepFavoritesOnly) {
-    return { ok: false as const };
+): {
+  recipe: IRareRecipeResult | null;
+  beverage: IRareBeverageResult | null;
+  recipeFavorite: FavoriteRecipeEntry | null;
+  beverageFavorite: FavoriteBeverageEntry | null;
+  preferenceFallback: boolean;
+} {
+  const needsRecipe = preferences.autoPrepStartCooking || preferences.autoPrepFavoritesOnly;
+  const needsBeverage = preferences.autoPrepTakeBeverage || preferences.autoPrepFavoritesOnly;
+  if (!needsRecipe && !needsBeverage) {
+    return {
+      recipe: null,
+      beverage: null,
+      recipeFavorite: null,
+      beverageFavorite: null,
+      preferenceFallback: false,
+    };
   }
 
-  for (const recipe of item.recipes) {
-    const favorite = findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe);
-    if (preferences.autoPrepFavoritesOnly && !favorite) continue;
-    return { ok: true as const, recipe, favorite, preferenceFallback: false };
+  for (const plan of item.plans) {
+    if (plan.bucket === 'blocked') continue;
+    const recipe = plan.food ? findRecipeRowForPlan(item, plan.food.recipe.id, plan.food.extraIngredients.map((ingredient) => ingredient.id)) : null;
+    const beverage = plan.beverage ? findBeverageRowForPlan(item, plan.beverage.beverage.id) : null;
+    const recipeFavorite = recipe ? findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe) : null;
+    const beverageFavorite = beverage ? findBeverageFavorite(favorites, item.customer.id, item.order.beverageTag, beverage) : null;
+
+    if (needsRecipe && !recipe) continue;
+    if (needsBeverage && !beverage) continue;
+    if (preferences.autoPrepFavoritesOnly && needsRecipe && !recipeFavorite) continue;
+    if (preferences.autoPrepFavoritesOnly && needsBeverage && !beverageFavorite) continue;
+
+    return {
+      recipe: needsRecipe ? recipe : null,
+      beverage: needsBeverage ? beverage : null,
+      recipeFavorite,
+      beverageFavorite,
+      preferenceFallback: Boolean(recipe && !recipe.meetsRequiredFood),
+    };
   }
 
-  if (item.recipes.length === 0) {
-    for (const recipe of item.preferenceRecipes) {
-      const favorite = findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe);
-      if (preferences.autoPrepFavoritesOnly && !favorite) continue;
-      return { ok: true as const, recipe, favorite, preferenceFallback: true };
-    }
-  }
-
-  return { ok: false as const };
+  return {
+    recipe: null,
+    beverage: null,
+    recipeFavorite: null,
+    beverageFavorite: null,
+    preferenceFallback: false,
+  };
 }
 
-function pickBeverageForPreparation(
+function findRecipeRowForPlan(
   item: OrderRecommendation,
-  favorites: FavoriteData,
-  preferences: CompanionPreferences,
-) {
-  if (!preferences.autoPrepTakeBeverage && !preferences.autoPrepFavoritesOnly) {
-    return { ok: false as const };
-  }
+  recipeId: number,
+  extraIngredientIds: number[],
+): IRareRecipeResult | null {
+  const normalizedExtras = normalizeIdList(extraIngredientIds).join(',');
+  return [...item.recipes, ...item.preferenceRecipes].find((recipe) =>
+    recipe.recipe.id === recipeId
+    && normalizeIdList(recipe.extraIngredients.map((ingredient) => ingredient.id)).join(',') === normalizedExtras
+  ) ?? null;
+}
 
-  for (const beverage of item.beverages) {
-    const favorite = findBeverageFavorite(favorites, item.customer.id, item.order.beverageTag, beverage);
-    if (preferences.autoPrepFavoritesOnly && !favorite) continue;
-    return { ok: true as const, beverage, favorite };
-  }
-
-  return { ok: false as const };
+function findBeverageRowForPlan(
+  item: OrderRecommendation,
+  beverageId: number,
+): IRareBeverageResult | null {
+  return [...item.beverages, ...item.preferenceBeverages].find((beverage) =>
+    beverage.beverage.id === beverageId
+  ) ?? null;
 }

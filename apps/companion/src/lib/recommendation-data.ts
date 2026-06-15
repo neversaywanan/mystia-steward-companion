@@ -16,8 +16,17 @@ export interface RecommendationDataSet {
   beverages: IBeverage[];
   normalCustomers: ICustomerNormal[];
   rareCustomers: ICustomerRare[];
+  foodTagIdMap: Record<string, string>;
+  beverageTagIdMap: Record<string, string>;
+  tagPriorityRules: RuntimeTagPriorityRule[];
   source: 'runtime' | 'unavailable';
   status: string;
+}
+
+export interface RuntimeTagPriorityRule {
+  id: number;
+  tagIds: number[];
+  tags: string[];
 }
 
 export const DEFAULT_RECOMMENDATION_DATA: RecommendationDataSet = {
@@ -26,6 +35,9 @@ export const DEFAULT_RECOMMENDATION_DATA: RecommendationDataSet = {
   beverages: [],
   normalCustomers: [],
   rareCustomers: [],
+  foodTagIdMap: {},
+  beverageTagIdMap: {},
+  tagPriorityRules: [],
   source: 'unavailable',
   status: '等待游戏运行时数据',
 };
@@ -40,6 +52,8 @@ export interface RuntimeDataCatalogSnapshot {
   normalCustomers: Array<Partial<ICustomerNormal> & { id: number; name: string }>;
   rareCustomers: Array<Partial<ICustomerRare> & { id: number; name: string }>;
   foodTagIdMap?: Record<string, string>;
+  beverageTagIdMap?: Record<string, string>;
+  tagPriorityRules?: RuntimeTagPriorityRule[];
 }
 
 export function buildRecommendationDataSet(
@@ -82,6 +96,9 @@ export function buildRecommendationDataSet(
     beverages,
     normalCustomers,
     rareCustomers,
+    foodTagIdMap: normalizeStringRecord(runtimeData.foodTagIdMap),
+    beverageTagIdMap: normalizeStringRecord(runtimeData.beverageTagIdMap),
+    tagPriorityRules: normalizeRuntimeTagPriorityRules(runtimeData.tagPriorityRules),
     source: 'runtime',
     status: runtimeData.status || runtimeData.source || 'game runtime',
   };
@@ -94,7 +111,22 @@ export function buildRecommendationDataIndexes(data: RecommendationDataSet) {
     ingredientNameById: new Map(data.ingredients.map((ingredient) => [ingredient.id, ingredient.name])),
     beverageNameById: new Map(data.beverages.map((beverage) => [beverage.id, beverage.name])),
     recipeByFoodId: new Map(data.recipes.map((recipe) => [recipe.id, recipe])),
+    foodTagNameById: new Map(Object.entries(data.foodTagIdMap).map(([id, tag]) => [Number(id), tag])),
+    beverageTagNameById: new Map(Object.entries(data.beverageTagIdMap).map(([id, tag]) => [Number(id), tag])),
   };
+}
+
+export function getRareCustomersByPlace(
+  place: TPlace,
+  data: RecommendationDataSet = DEFAULT_RECOMMENDATION_DATA,
+): ICustomerRare[] {
+  return data.rareCustomers.filter((customer) => customer.places.includes(place));
+}
+
+export function getAllRareCustomers(
+  data: RecommendationDataSet = DEFAULT_RECOMMENDATION_DATA,
+): ICustomerRare[] {
+  return data.rareCustomers;
 }
 
 function normalizeRuntimeRecipe(value: RuntimeDataCatalogSnapshot['recipes'][number]): IRecipe | null {
@@ -197,6 +229,48 @@ function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? [...new Set(value.map((item) => String(item).trim()).filter(Boolean))]
     : [];
+}
+
+function normalizeStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const entries = Object.entries(value)
+    .map(([key, item]) => [String(key).trim(), String(item).trim()] as const)
+    .filter(([key, item]) => key.length > 0 && item.length > 0);
+  return Object.fromEntries(entries);
+}
+
+function normalizeRuntimeTagPriorityRules(value: unknown): RuntimeTagPriorityRule[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Partial<RuntimeTagPriorityRule>;
+      const id = Number(record.id);
+      const tagIds = normalizeNumberArray(record.tagIds);
+      const tags = normalizeStringArray(record.tags);
+      if (!Number.isFinite(id) || id < 0 || tagIds.length === 0 || tags.length === 0) return null;
+      return {
+        id: Math.trunc(id),
+        tagIds,
+        tags,
+      };
+    })
+    .filter((item): item is RuntimeTagPriorityRule => item !== null);
+}
+
+function normalizeNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<number>();
+  const result: number[] = [];
+  for (const item of value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item >= 0)
+    .map((item) => Math.trunc(item))) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    result.push(item);
+  }
+  return result;
 }
 
 function normalizePlaces(value: unknown): TPlace[] {

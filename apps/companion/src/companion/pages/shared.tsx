@@ -1,9 +1,8 @@
-import { IconArrowDown, IconArrowUp, IconRotateClockwise } from '@tabler/icons-react';
 import { RecommendationItem, RecommendationMetaBadge, RecommendationTagBadges } from '@/components/RecommendationItem';
 import { CustomerScoreBadges } from '@/components/ScoreBadge';
 import { RegionSelector } from '@/components/RegionSelector';
 import { TagBadge } from '@/components/TagBadge';
-import { Badge, Button, EmptyRow, EmptyState, NumberInput, SegmentedControl, SliderField, Switch, SwitchField } from '@/components/ui-kit';
+import { Badge, Button, EmptyRow, EmptyState, NumberInput, SegmentedControl, SliderField, SwitchField } from '@/components/ui-kit';
 import { findBeverageFavorite, findRecipeFavorite, beverageFavoriteKey, recipeFavoriteKey } from '@/companion/domain/favorites';
 import { formatDesk, formatIngredientNamesWithQty, formatIngredientWithQty, formatQtySuffix } from '@/companion/formatters';
 import {
@@ -13,14 +12,10 @@ import {
   MIN_CONTENT_OPACITY,
   MIN_FOCUS_SWITCH_COOLDOWN_MS,
   clampInteger,
-  getSortOptionLabel,
   normalizeBackgroundOpacity,
   normalizeContentOpacity,
   normalizeFocusRecommendationLimit,
   normalizeFocusSwitchCooldownMs,
-  normalizeSortRules,
-  type SortOption,
-  type SortRule,
 } from '@/companion/preferences';
 import type {
   FavoriteBeverageEntry,
@@ -33,12 +28,12 @@ import type {
 } from '@/companion/types';
 import type { buildRecommendationDataIndexes } from '@/lib/recommendation-data';
 import type { INormalBeverageResult, INormalRecipeResult, IRareBeverageResult, IRareRecipeResult, TPlace } from '@/lib/types';
+import type { RecommendationBudgetResult } from '@/recommendation-engine';
 import {
   AUTOMATION_SWITCH_CELL,
   DENSE_TWO_COLUMN_GRID,
   DENSE_TWO_COLUMN_GRID_TIGHT,
   MAX_RECOMMENDATION_ROWS,
-  RATING_LABELS,
   type LowStockEntry,
 } from '@/companion/pages/shared-constants';
 
@@ -274,90 +269,6 @@ export function SettingSegmentedControl<TValue extends string>({
   );
 }
 
-export function SortRulesControl<K extends string>({
-  rules,
-  options,
-  onChange,
-  onReset,
-}: {
-  rules: SortRule<K>[];
-  options: SortOption<K>[];
-  onChange: (rules: SortRule<K>[]) => void;
-  onReset: () => void;
-}) {
-  const normalizedRules = normalizeSortRules(rules, options);
-  const updateRule = (key: K, next: Partial<SortRule<K>>) => {
-    onChange(normalizedRules.map((rule) => (rule.key === key ? { ...rule, ...next } : rule)));
-  };
-  const moveRule = (index: number, offset: number) => {
-    const nextIndex = index + offset;
-    if (nextIndex < 0 || nextIndex >= normalizedRules.length) return;
-    const next = [...normalizedRules];
-    const [item] = next.splice(index, 1);
-    next.splice(nextIndex, 0, item);
-    onChange(next);
-  };
-
-  return (
-    <div className="space-y-2">
-      {normalizedRules.map((rule, index) => {
-        const label = getSortOptionLabel(options, rule.key);
-        return (
-          <div
-            key={rule.key}
-            className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md border border-border steward-background-surface-50 p-2 text-sm"
-          >
-            <label className="flex min-w-0 items-center gap-2">
-              <Switch
-                checked={rule.enabled}
-                onCheckedChange={(enabled) => updateRule(rule.key, { enabled })}
-              />
-              <span className="truncate">{label}</span>
-            </label>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 px-2"
-              onClick={() => updateRule(rule.key, { direction: rule.direction === 'desc' ? 'asc' : 'desc' })}
-            >
-              {rule.direction === 'desc' ? '降序' : '升序'}
-            </Button>
-            <div className="flex gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 w-8 p-0"
-                title="上移"
-                disabled={index === 0}
-                onClick={() => moveRule(index, -1)}
-              >
-                <IconArrowUp className="size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 w-8 p-0"
-                title="下移"
-                disabled={index === normalizedRules.length - 1}
-                onClick={() => moveRule(index, 1)}
-              >
-                <IconArrowDown className="size-3.5" />
-              </Button>
-            </div>
-          </div>
-        );
-      })}
-      <Button type="button" size="sm" variant="outline" className="mt-1 gap-1.5" onClick={onReset}>
-        <IconRotateClockwise className="size-3.5" />
-        恢复默认排序
-      </Button>
-    </div>
-  );
-}
-
 export function PlaceToolbar({
   selectedPlace,
   detectedPlace,
@@ -402,7 +313,7 @@ export function NormalRecipeRow({
     <RecommendationItem
       index={index}
       title={recipe.recipe.name}
-      summary={`分数 ${recipe.totalCoverage} · 成本 ${recipe.ingredientCost} · 利润 ${recipe.profit} · 价格 ${recipe.recipe.price}`}
+      summary={`覆盖 ${recipe.totalCoverage} · 成本 ${recipe.ingredientCost} · 利润 ${recipe.profit} · 价格 ${recipe.recipe.price}`}
       inlineMeta={<RecommendationMetaBadge label="厨具" value={recipe.recipe.cooker || '未知'} tone="cooker" />}
       meta={<RecommendationMetaBadge label="基础配方" value={baseRecipe} tone="base" />}
     >
@@ -430,7 +341,7 @@ export function NormalBeverageRow({
       index={index}
       title={beverage.beverage.name}
       titleSuffix={formatQtySuffix(ownedBeverageQty[beverage.beverage.id])}
-      summary={`分数 ${beverage.totalCoverage} · 价格 ${beverage.beverage.price}`}
+      summary={`覆盖 ${beverage.totalCoverage} · 价格 ${beverage.beverage.price}`}
     >
       <RecommendationTagBadges tags={beverage.beverage.tags} matchedTags={beverage.matchedTags} />
       <div className="mt-1">
@@ -476,6 +387,14 @@ export function OrderRecommendationPanel({
   const targetCookerName = visibleRecipes[0]?.recipe.cooker
     ?? visiblePreferenceRecipes[0]?.recipe.cooker
     ?? '';
+  const budget = item.plans.find((plan) => plan.budget)?.budget ?? null;
+  const blockedMessages = item.plans.length > 0 && item.plans.every((plan) => plan.bucket === 'blocked')
+    ? [...new Set(item.plans.flatMap((plan) =>
+      plan.conditionResults
+        .filter((result) => result.status === 'fail' && result.severity === 'hard')
+        .map((result) => result.detail),
+    ))].slice(0, 3)
+    : [];
 
   return (
     <div className={compact ? 'rounded-md border border-border p-2' : 'rounded-md border border-border p-3'}>
@@ -490,8 +409,14 @@ export function OrderRecommendationPanel({
                 目标厨具 {targetCookerName}
               </Badge>
             )}
+            {budget && <BudgetBadge budget={budget} />}
             {showDebugDetails && <Badge variant="secondary">{item.order.source}</Badge>}
           </div>
+          {blockedMessages.length > 0 && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              {blockedMessages.join('；')}
+            </div>
+          )}
         </div>
       </div>
 
@@ -574,6 +499,19 @@ export function OrderRecommendationPanel({
   );
 }
 
+function BudgetBadge({ budget }: { budget: RecommendationBudgetResult }) {
+  if (budget.policy === 'ignore') {
+    return <Badge variant="outline">预估 {budget.estimatedPrice}</Badge>;
+  }
+  if (budget.remainingBudget === null) {
+    return <Badge variant="outline">预估 {budget.estimatedPrice} · 预算未知</Badge>;
+  }
+  if (budget.overBudget > 0) {
+    return <Badge variant="destructive">预估 {budget.estimatedPrice} · 超 {budget.overBudget}</Badge>;
+  }
+  return <Badge variant="secondary">预估 {budget.estimatedPrice} / 预算 {budget.remainingBudget}</Badge>;
+}
+
 export function RecipeRecommendationRow({
   recipe,
   index,
@@ -619,10 +557,12 @@ export function RecipeRecommendationRow({
               任务
             </Badge>
           )}
-          <Badge variant="secondary">{RATING_LABELS[recipe.rating]}</Badge>
+          <Badge variant={recipe.meetsRequiredFood ? 'secondary' : 'outline'}>
+            {recipe.meetsRequiredFood ? '满足点单' : '偏好备选'}
+          </Badge>
         </>
       )}
-      summary={`分数 ${recipe.foodScore} · 成本 ${totalCost}`}
+      summary={`加料 ${recipe.extraIngredients.length} 项 · 成本 ${totalCost}`}
       inlineMeta={<RecommendationMetaBadge label="厨具" value={recipe.recipe.cooker || '未知'} tone="cooker" />}
       meta={(
         <>
@@ -673,7 +613,7 @@ export function BeverageRecommendationRow({
       title={beverage.beverage.name}
       titleSuffix={formatQtySuffix(ownedBeverageQty[beverage.beverage.id])}
       badges={beverage.meetsRequiredBev ? <Badge variant="secondary">满足点单</Badge> : undefined}
-      summary={`分数 ${beverage.bevScore} · 价格 ${beverage.beverage.price}`}
+      summary={`匹配 ${beverage.matchedTags.length} 项 · 价格 ${beverage.beverage.price}`}
       compact={compact}
       favorite={onToggleFavorite ? {
         active: Boolean(favorite),

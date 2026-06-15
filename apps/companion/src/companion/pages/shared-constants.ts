@@ -1,5 +1,3 @@
-import type { TRating } from '@/lib/types';
-
 export const MAX_RECOMMENDATION_ROWS = 8;
 export const DENSE_TWO_COLUMN_GRID = 'grid grid-cols-2 gap-3';
 export const DENSE_TWO_COLUMN_GRID_TIGHT = 'grid grid-cols-2 gap-2';
@@ -13,14 +11,6 @@ export const MOD_TAB_TRIGGER_CLASS = 'min-w-0 flex-1';
 export const INNER_TAB_TRIGGER_CLASS = 'min-w-0 flex-1';
 export const SCROLL_FADE_CLASS = 'steward-scroll-fade';
 export const RECOMMENDATION_SCROLL_AREA = `${SCROLL_FADE_CLASS} min-h-[28rem] max-h-[calc(100vh-18rem)] overflow-auto pb-4 pr-1`;
-
-export const RATING_LABELS: Record<TRating, string> = {
-  ExGood: '完美',
-  Good: '满意',
-  Normal: '普通',
-  Bad: '不满',
-  ExBad: '极差',
-};
 
 export interface LowStockEntry {
   id: number;

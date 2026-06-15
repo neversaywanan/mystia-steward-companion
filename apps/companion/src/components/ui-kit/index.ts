@@ -5,6 +5,7 @@ export * from '@/components/ui/card';
 export * from '@/components/ui/display';
 export * from '@/components/ui/input';
 export * from '@/components/ui/mantine-provider';
+export * from '@/components/ui/multi-select';
 export * from '@/components/ui/number-input';
 export * from '@/components/ui/segmented-control';
 export * from '@/components/ui/select';
