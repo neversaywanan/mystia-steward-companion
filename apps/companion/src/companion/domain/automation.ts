@@ -901,39 +901,45 @@ function pickPlanForPreparation(
   const needsRecipe = preferences.autoPrepStartCooking || preferences.autoPrepFavoritesOnly;
   const needsBeverage = preferences.autoPrepTakeBeverage || preferences.autoPrepFavoritesOnly;
   if (!needsRecipe && !needsBeverage) {
-    return {
-      recipe: null,
-      beverage: null,
-      recipeFavorite: null,
-      beverageFavorite: null,
-      preferenceFallback: false,
-    };
+    return emptyPlanPick();
   }
 
-  for (const plan of item.plans) {
-    if (plan.bucket === 'blocked') continue;
-    const recipe = plan.food
-      ? findRecipeRowForPlan(item, plan.food.recipe.id, plan.food.extraIngredients.map((ingredient) => ingredient.id))
-        ?? toRareRecipeResult(plan.food)
-      : null;
-    const beverage = plan.beverage ? findBeverageRowForPlan(item, plan.beverage.beverage.id) : null;
-    const recipeFavorite = recipe ? findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe) : null;
-    const beverageFavorite = beverage ? findBeverageFavorite(favorites, item.customer.id, item.order.beverageTag, beverage) : null;
-
-    if (needsRecipe && !recipe) continue;
-    if (needsBeverage && !beverage) continue;
-    if (preferences.autoPrepFavoritesOnly && needsRecipe && !recipeFavorite) continue;
-    if (preferences.autoPrepFavoritesOnly && needsBeverage && !beverageFavorite) continue;
-
-    return {
-      recipe: needsRecipe ? recipe : null,
-      beverage: needsBeverage ? beverage : null,
-      recipeFavorite,
-      beverageFavorite,
-      preferenceFallback: Boolean(recipe && !recipe.meetsRequiredFood),
-    };
+  const plan = item.preparationPlan;
+  if (!plan) {
+    return emptyPlanPick();
   }
 
+  const recipe = plan.food
+    ? findRecipeRowForPlan(item, plan.food.recipe.id, plan.food.extraIngredients.map((ingredient) => ingredient.id))
+      ?? toRareRecipeResult(plan.food)
+    : null;
+  const beverage = plan.beverage ? findBeverageRowForPlan(item, plan.beverage.beverage.id) : null;
+  const recipeFavorite = recipe ? findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe) : null;
+  const beverageFavorite = beverage ? findBeverageFavorite(favorites, item.customer.id, item.order.beverageTag, beverage) : null;
+
+  if (needsRecipe && !recipe) {
+    return emptyPlanPick();
+  }
+  if (needsBeverage && !beverage) {
+    return emptyPlanPick();
+  }
+  if (preferences.autoPrepFavoritesOnly && needsRecipe && !recipeFavorite) {
+    return emptyPlanPick();
+  }
+  if (preferences.autoPrepFavoritesOnly && needsBeverage && !beverageFavorite) {
+    return emptyPlanPick();
+  }
+
+  return {
+    recipe: needsRecipe ? recipe : null,
+    beverage: needsBeverage ? beverage : null,
+    recipeFavorite,
+    beverageFavorite,
+    preferenceFallback: Boolean(recipe && !recipe.meetsRequiredFood),
+  };
+}
+
+function emptyPlanPick() {
   return {
     recipe: null,
     beverage: null,

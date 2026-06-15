@@ -4,6 +4,7 @@ import { WorkbenchHeader } from '@/companion/features/workbench/WorkbenchHeader'
 import { useCompanionConnection } from '@/companion/hooks/useCompanionConnection';
 import { useFavorites } from '@/companion/hooks/useFavorites';
 import { useOrderAutomationIntervals } from '@/companion/hooks/useOrderAutomationIntervals';
+import { useOrderRecommendations } from '@/companion/hooks/useOrderRecommendations';
 import { useRareGuestInvitations } from '@/companion/hooks/useRareGuestInvitations';
 import { ModHelpPanel } from '@/companion/pages/ModHelpPanel';
 import { ModInventoryPanel } from '@/companion/pages/ModInventoryPanel';
@@ -83,8 +84,6 @@ import {
   getRareCookerRequirement,
 } from '@/companion/domain/cookers';
 import {
-  buildOrderRecommendations,
-  buildRareCustomerMap,
   isUsableRareCustomer,
   normalizePlace,
   toRuntimeRareCustomer,
@@ -114,7 +113,6 @@ import {
 } from '@/companion/storage';
 import type {
   AutomationCookerCycle,
-  CachedRecommendation,
   ModTab,
   NightBusinessOrder,
   NormalAutoOrderDiagnostic,
@@ -211,7 +209,6 @@ export function ModWorkbench() {
   const lastAutoFirstOrderAtRef = useRef(0);
   const lastAutoNormalOrderAtRef = useRef(0);
   const automationCookerCycleRef = useRef<AutomationCookerCycle | null>(null);
-  const recommendationCacheRef = useRef(new Map<string, CachedRecommendation>());
   const lastUiPinningSignatureRef = useRef('');
 
   const updateCompanionPreferences = useCallback((next: Partial<CompanionPreferences>) => {
@@ -245,10 +242,6 @@ export function ModWorkbench() {
       .filter(isUsableRareCustomer),
     [snapshot?.runtimeRareCustomers],
   );
-  const rareCustomersById = useMemo(
-    () => buildRareCustomerMap(runtimeRareCustomers, recommendationData),
-    [runtimeRareCustomers, recommendationData],
-  );
 
   const runtimeSets = useMemo(() => buildRuntimeSets(runtime, recommendationData), [recommendationData, runtime]);
   const normalOrderSignature = useMemo(
@@ -256,20 +249,29 @@ export function ModWorkbench() {
     [snapshot?.normalBusiness?.orders],
   );
   const visibleTabs = companionPreferences.showDebugDetails ? MOD_TABS : BASIC_MOD_TABS;
-  const orderRecommendations = useMemo(
-    () => buildOrderRecommendations(
-      night?.orders ?? [],
+  const orderRecommendationPayload = useMemo(
+    () => ({
+      orders: night?.orders ?? [],
       runtime,
-      rareCustomersById,
-      recommendationCacheRef.current,
+      runtimeRareCustomers,
       favorites,
+      preferences: companionPreferences,
+      activeRareGuests: night?.activeRareGuests ?? [],
+      missionServeTargets: snapshot?.runtimeMissions?.serveTargets ?? [],
+      data: recommendationData,
+    }),
+    [
       companionPreferences,
-      night?.activeRareGuests ?? [],
-      snapshot?.runtimeMissions?.serveTargets ?? [],
+      favorites,
+      night?.activeRareGuests,
+      night?.orders,
       recommendationData,
-    ),
-    [night?.orders, night?.activeRareGuests, runtime, rareCustomersById, favorites, companionPreferences, snapshot?.runtimeMissions?.serveTargets, recommendationData],
+      runtime,
+      runtimeRareCustomers,
+      snapshot?.runtimeMissions?.serveTargets,
+    ],
   );
+  const orderRecommendations = useOrderRecommendations(orderRecommendationPayload);
   const gameUiPinningTarget = useMemo(
     () => companionPreferences.gameUiPinningEnabled || companionPreferences.cookerHighlightEnabled
       ? buildGameUiPinningTarget(
@@ -415,6 +417,16 @@ export function ModWorkbench() {
       } else {
         setAutoPrepMessage('');
       }
+      return;
+    }
+
+    if (orderRecommendations.pending || !orderRecommendations.isCurrent) {
+      setAutoPrepMessage('自动化\n推荐计算中，等待下一次结果。');
+      return;
+    }
+
+    if (orderRecommendations.error) {
+      setAutoPrepMessage(`自动化\n${orderRecommendations.error}`);
       return;
     }
 
@@ -708,6 +720,9 @@ export function ModWorkbench() {
     companionPreferences,
     favorites,
     normalizedEndpoint,
+    orderRecommendations.error,
+    orderRecommendations.isCurrent,
+    orderRecommendations.pending,
     orderRecommendations.recommendations,
     recommendationData,
     refresh,

@@ -2,6 +2,7 @@ export {
   buildRareBeverageCandidates,
   buildRareFoodCandidates,
   buildRareOrderPlans,
+  buildRareOrderPlansFromCandidates,
   sortRareOrderPlans,
 } from '@/recommendation-engine/rare-orders';
 export {

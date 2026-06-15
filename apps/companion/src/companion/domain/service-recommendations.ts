@@ -1,4 +1,4 @@
-import { buildRuntimeSets, normalizeCookerName } from '@/companion/domain/cookers';
+import { buildRuntimeSets } from '@/companion/domain/cookers';
 import { normalizeIdList, recipeResultKey } from '@/companion/domain/favorites';
 import { sortNightOrders } from '@/companion/domain/sorting';
 import {
@@ -25,11 +25,14 @@ import {
 import type { ICustomerRare, IRareBeverageResult, IRareRecipeResult, TPlace } from '@/lib/types';
 import { ALL_PLACES } from '@/lib/types';
 import {
-  buildRareOrderPlans,
+  buildRareBeverageCandidates,
+  buildRareFoodCandidates,
+  buildRareOrderPlansFromCandidates,
   serializeRecommendationSortProfile,
   type BeverageCandidate,
   type FoodCandidate,
   type RecommendationBudgetContext,
+  type RecommendationBudgetResult,
   type RareOrderRecommendationPlan,
   type RecommendationPlanSortContext,
   type RecommendationRuntimeContext,
@@ -37,11 +40,25 @@ import {
 
 const NON_ORDERABLE_RARE_FOOD_TAGS = new Set(['流行喜爱', '流行厌恶']);
 
+export interface RecommendationCacheStore {
+  orders: Map<string, CachedRecommendation>;
+  foodCandidates: Map<string, FoodCandidate[]>;
+  beverageCandidates: Map<string, BeverageCandidate[]>;
+}
+
+export function createRecommendationCacheStore(): RecommendationCacheStore {
+  return {
+    orders: new Map<string, CachedRecommendation>(),
+    foodCandidates: new Map<string, FoodCandidate[]>(),
+    beverageCandidates: new Map<string, BeverageCandidate[]>(),
+  };
+}
+
 export function buildOrderRecommendations(
   orders: NightBusinessOrder[],
   runtime: RecommendationStateSnapshot | null | undefined,
   rareCustomersById: Map<number, ICustomerRare>,
-  cache: Map<string, CachedRecommendation>,
+  caches: RecommendationCacheStore,
   favorites: FavoriteData,
   preferences: CompanionPreferences,
   activeRareGuests: NightBusinessGuest[] = [],
@@ -60,9 +77,9 @@ export function buildOrderRecommendations(
   const runtimeSets = buildRuntimeSets(runtime, data);
   if (!runtimeSets) return { recommendations: [], recommendationIssues: [] };
 
-  const stateSignature = `${data.source}:${data.status}|${buildRecommendationStateSignature(runtime, preferences)}`;
   const recommendations: OrderRecommendation[] = [];
   const recommendationIssues: RecommendationIssue[] = [];
+  const candidateContext = buildRecommendationRuntimeContext(runtime, runtimeSets, preferences, data);
 
   for (const order of sortedOrders) {
     const customer = findRareCustomer(order, rareCustomersById);
@@ -89,36 +106,77 @@ export function buildOrderRecommendations(
       missionTarget?.recipeId ?? null,
     );
     const budgetContext = findBudgetContextForOrder(order, activeRareGuests);
+    const foodCandidateKey = buildFoodCandidateCacheKey(data, customer, foodTag, candidateContext);
+    const beverageCandidateKey = buildBeverageCandidateCacheKey(data, customer, beverageTag, candidateContext);
+    let foodCandidates = caches.foodCandidates.get(foodCandidateKey);
+    if (!foodCandidates) {
+      foodCandidates = buildRareFoodCandidates(
+        data,
+        buildRareTagOrderDemand(customer, foodTag, beverageTag),
+        candidateContext,
+      );
+      caches.foodCandidates.set(foodCandidateKey, foodCandidates);
+      trimCache(caches.foodCandidates, 48);
+    }
+    let beverageCandidates = caches.beverageCandidates.get(beverageCandidateKey);
+    if (!beverageCandidates) {
+      beverageCandidates = buildRareBeverageCandidates(
+        data,
+        buildRareTagOrderDemand(customer, foodTag, beverageTag),
+        candidateContext,
+      );
+      caches.beverageCandidates.set(beverageCandidateKey, beverageCandidates);
+      trimCache(caches.beverageCandidates, 48);
+    }
     const cacheKey = [
-      stateSignature,
-      customer.id,
-      foodTag,
-      beverageTag,
+      foodCandidateKey,
+      beverageCandidateKey,
+      `sort:${serializeRecommendationSortProfile(preferences.recommendationSortProfile)}`,
       serializeRecommendationPlanSortContext(sortContext),
+      `budgetPolicy:${preferences.recommendationBudgetPolicy}`,
       serializeBudgetContext(budgetContext),
+      `recipeVariantLimit:${preferences.recipeVariantLimitPerBase}`,
     ].join('|');
-    let cached = cache.get(cacheKey);
+    let cached = caches.orders.get(cacheKey);
     if (!cached) {
-      const plans = buildRareOrderPlans({
+      const plans = buildRareOrderPlansFromCandidates({
         data,
         customer,
         requiredFoodTag: foodTag,
         requiredBeverageTag: beverageTag,
         context: buildRecommendationRuntimeContext(runtime, runtimeSets, preferences, data, { budget: budgetContext }),
+        foodCandidates,
+        beverageCandidates,
         sortProfile: preferences.recommendationSortProfile,
         sortContext,
-        limit: MAX_FOCUS_RECOMMENDATION_ROWS * 4,
       });
+      const preparationPlan = findPreparationPlan(plans);
       cached = {
         customer,
-        plans,
-        recipes: deriveRecipeRowsFromPlans(plans, true, preferences.recipeVariantLimitPerBase),
-        beverages: deriveBeverageRowsFromPlans(plans, true),
-        preferenceRecipes: deriveRecipeRowsFromPlans(plans, false, preferences.recipeVariantLimitPerBase),
-        preferenceBeverages: deriveBeverageRowsFromPlans(plans, false),
+        preparationPlan,
+        budget: findRecommendationBudget(plans, preparationPlan),
+        blockedMessages: buildBlockedPlanMessages(plans),
+        recipes: deriveRecipeRowsFromPlans(plans, {
+          requireOrderTag: true,
+          variantLimitPerBase: preferences.recipeVariantLimitPerBase,
+          limit: MAX_FOCUS_RECOMMENDATION_ROWS,
+        }),
+        beverages: deriveBeverageRowsFromPlans(plans, {
+          requireOrderTag: true,
+          limit: MAX_FOCUS_RECOMMENDATION_ROWS,
+        }),
+        preferenceRecipes: deriveRecipeRowsFromPlans(plans, {
+          requireOrderTag: false,
+          variantLimitPerBase: preferences.recipeVariantLimitPerBase,
+          limit: MAX_FOCUS_RECOMMENDATION_ROWS,
+        }),
+        preferenceBeverages: deriveBeverageRowsFromPlans(plans, {
+          requireOrderTag: false,
+          limit: MAX_FOCUS_RECOMMENDATION_ROWS,
+        }),
       };
-      cache.set(cacheKey, cached);
-      trimRecommendationCache(cache);
+      caches.orders.set(cacheKey, cached);
+      trimCache(caches.orders, 24);
     }
 
     const recipeRows = markMissionRecipeRows(cached.recipes, missionTarget?.recipeId ?? null);
@@ -127,11 +185,13 @@ export function buildOrderRecommendations(
     recommendations.push({
       order,
       customer: cached.customer,
-      plans: cached.plans,
-      recipes: recipeRows.slice(0, MAX_FOCUS_RECOMMENDATION_ROWS),
-      beverages: cached.beverages.slice(0, MAX_FOCUS_RECOMMENDATION_ROWS),
-      preferenceRecipes: preferenceRecipeRows.slice(0, MAX_FOCUS_RECOMMENDATION_ROWS),
-      preferenceBeverages: cached.preferenceBeverages.slice(0, MAX_FOCUS_RECOMMENDATION_ROWS),
+      preparationPlan: cached.preparationPlan,
+      budget: cached.budget,
+      blockedMessages: cached.blockedMessages,
+      recipes: recipeRows,
+      beverages: cached.beverages,
+      preferenceRecipes: preferenceRecipeRows,
+      preferenceBeverages: cached.preferenceBeverages,
     });
   }
 
@@ -329,14 +389,47 @@ export function buildRecommendationRuntimeContext(
   };
 }
 
+function findPreparationPlan(plans: RareOrderRecommendationPlan[]): RareOrderRecommendationPlan | null {
+  return plans.find((plan) => plan.bucket !== 'blocked') ?? null;
+}
+
+function findRecommendationBudget(
+  plans: RareOrderRecommendationPlan[],
+  preparationPlan: RareOrderRecommendationPlan | null,
+): RecommendationBudgetResult | null {
+  return preparationPlan?.budget ?? plans.find((plan) => plan.budget)?.budget ?? null;
+}
+
+function buildBlockedPlanMessages(plans: RareOrderRecommendationPlan[]): string[] {
+  if (plans.length === 0 || plans.some((plan) => plan.bucket !== 'blocked')) return [];
+
+  const messages = plans.flatMap((plan) =>
+    plan.conditionResults
+      .filter((result) => result.status === 'fail' && result.severity === 'hard')
+      .map((result) => result.detail),
+  );
+  return [...new Set(messages)].slice(0, 3);
+}
+
 export function deriveRecipeRowsFromPlans(
   plans: RareOrderRecommendationPlan[],
-  requireOrderTag: boolean,
-  variantLimitPerBase = Number.POSITIVE_INFINITY,
+  {
+    requireOrderTag,
+    variantLimitPerBase = Number.POSITIVE_INFINITY,
+    limit = Number.POSITIVE_INFINITY,
+  }: {
+    requireOrderTag: boolean;
+    variantLimitPerBase?: number;
+    limit?: number;
+  },
 ): IRareRecipeResult[] {
   const rows: IRareRecipeResult[] = [];
   const seen = new Set<string>();
   const baseRecipeCounts = new Map<number, number>();
+  const rowLimit = normalizeDerivedRowLimit(limit);
+  const baseLimit = normalizeDerivedRowLimit(variantLimitPerBase);
+  if (rowLimit <= 0 || baseLimit <= 0) return rows;
+
   for (const plan of plans) {
     if (!plan.food) continue;
     if (plan.bucket === 'blocked') continue;
@@ -345,20 +438,30 @@ export function deriveRecipeRowsFromPlans(
     const key = recipeResultKey(row);
     if (seen.has(key)) continue;
     const currentBaseCount = baseRecipeCounts.get(row.recipe.id) ?? 0;
-    if (currentBaseCount >= variantLimitPerBase) continue;
+    if (currentBaseCount >= baseLimit) continue;
     seen.add(key);
     baseRecipeCounts.set(row.recipe.id, currentBaseCount + 1);
     rows.push(row);
+    if (rows.length >= rowLimit) break;
   }
   return rows;
 }
 
 export function deriveBeverageRowsFromPlans(
   plans: RareOrderRecommendationPlan[],
-  requireOrderTag: boolean,
+  {
+    requireOrderTag,
+    limit = Number.POSITIVE_INFINITY,
+  }: {
+    requireOrderTag: boolean;
+    limit?: number;
+  },
 ): IRareBeverageResult[] {
   const rows: IRareBeverageResult[] = [];
   const seen = new Set<number>();
+  const rowLimit = normalizeDerivedRowLimit(limit);
+  if (rowLimit <= 0) return rows;
+
   for (const plan of plans) {
     if (!plan.beverage) continue;
     if (plan.bucket === 'blocked') continue;
@@ -366,8 +469,14 @@ export function deriveBeverageRowsFromPlans(
     if (seen.has(plan.beverage.beverage.id)) continue;
     seen.add(plan.beverage.beverage.id);
     rows.push(toRareBeverageResult(plan.beverage));
+    if (rows.length >= rowLimit) break;
   }
   return rows;
+}
+
+function normalizeDerivedRowLimit(value: number): number {
+  if (!Number.isFinite(value)) return Number.POSITIVE_INFINITY;
+  return Math.max(0, Math.trunc(value));
 }
 
 export function toRareRecipeResult(food: FoodCandidate): IRareRecipeResult {
@@ -391,40 +500,109 @@ function toRareBeverageResult(beverage: BeverageCandidate): IRareBeverageResult 
   };
 }
 
-function buildRecommendationStateSignature(runtime: RecommendationStateSnapshot, preferences: CompanionPreferences) {
-  const ownedQty = Object.entries(runtime.ownedIngredientQty)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([id, qty]) => `${id}:${qty}`)
-    .join(',');
-  const ownedBeverageQty = Object.entries(runtime.ownedBeverageQty)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([id, qty]) => `${id}:${qty}`)
-    .join(',');
-  const placedCookers = [
-    ...(runtime.placedCookerTypeIds ?? []).map((id) => `id:${id}`),
-    ...(runtime.placedCookers ?? []).flatMap((cooker) =>
-      [cooker.name, ...(cooker.typeNames ?? [])].map((name) => `name:${normalizeCookerName(name)}`),
-    ),
-  ].filter(Boolean).sort().join(',');
+function buildRareTagOrderDemand(customer: ICustomerRare, requiredFoodTag: string, requiredBeverageTag: string) {
+  return {
+    type: 'rare-tag-order' as const,
+    customer,
+    requiredFoodTag,
+    requiredBeverageTag,
+  };
+}
 
+function buildFoodCandidateCacheKey(
+  data: RecommendationDataSet,
+  customer: ICustomerRare,
+  requiredFoodTag: string,
+  context: RecommendationRuntimeContext,
+): string {
   return [
-    runtime.availableRecipeIds.join(','),
-    runtime.availableBeverageIds.join(','),
-    runtime.availableIngredientIds.join(','),
-    (runtime.availableRareCustomerIds ?? []).join(','),
-    ownedQty,
-    ownedBeverageQty,
-    runtime.popularFoodTag ?? '',
-    runtime.popularHateFoodTag ?? '',
-    runtime.famousShopEnabled ? '1' : '0',
-    preferences.filterMissingCookers ? 'filterCooker:1' : 'filterCooker:0',
-    preferences.prioritizeMissionRecipes ? 'missionRecipe:1' : 'missionRecipe:0',
-    `planSort:${serializeRecommendationSortProfile(preferences.recommendationSortProfile)}`,
-    `budgetPolicy:${preferences.recommendationBudgetPolicy}`,
-    `recipeVariantLimit:${preferences.recipeVariantLimitPerBase}`,
-    `exclusions:${serializeRecommendationExclusions(preferences.recommendationExclusions.excludedIngredientIds, preferences.recommendationExclusions.excludedBeverageIds)}`,
-    placedCookers,
+    'foodCandidates',
+    serializeDataSignature(data),
+    serializeRareCustomerFoodProfile(customer),
+    `requiredFood:${requiredFoodTag}`,
+    `recipes:${serializeNumberSet(context.availableRecipeIds)}`,
+    `ingredients:${serializeNumberSet(context.availableIngredientIds)}`,
+    `excludedIngredients:${serializeNumberSet(context.excludedIngredientIds)}`,
+    `ownedIngredients:${serializeNumberRecord(context.ownedIngredientQty)}`,
+    `cookers:${serializeStringSet(context.placedCookerNames)}`,
+    `hasCookers:${context.hasCookerSnapshot ? '1' : '0'}`,
+    `filterCookers:${context.filterMissingCookers ? '1' : '0'}`,
+    `popular:${context.popularFoodTag ?? ''}`,
+    `popularHate:${context.popularHateFoodTag ?? ''}`,
+    `famous:${context.famousShopEnabled ? '1' : '0'}`,
+    `tagRules:${serializeTagPriorityRules(context.tagPriorityRules)}`,
+    `extraSlots:${context.maxExtraIngredients}`,
   ].join('|');
+}
+
+function buildBeverageCandidateCacheKey(
+  data: RecommendationDataSet,
+  customer: ICustomerRare,
+  requiredBeverageTag: string,
+  context: RecommendationRuntimeContext,
+): string {
+  return [
+    'beverageCandidates',
+    serializeDataSignature(data),
+    serializeRareCustomerBeverageProfile(customer),
+    `requiredBeverage:${requiredBeverageTag}`,
+    `beverages:${serializeNumberSet(context.availableBeverageIds)}`,
+    `excludedBeverages:${serializeNumberSet(context.excludedBeverageIds)}`,
+    `ownedBeverages:${serializeNumberRecord(context.ownedBeverageQty)}`,
+  ].join('|');
+}
+
+function serializeDataSignature(data: RecommendationDataSet): string {
+  return `${data.source}:${data.status}`;
+}
+
+function serializeRareCustomerFoodProfile(customer: ICustomerRare): string {
+  return [
+    `customer:${customer.id}`,
+    `positive:${serializeStringList(customer.positiveTags)}`,
+    `negative:${serializeStringList(customer.negativeTags)}`,
+  ].join(';');
+}
+
+function serializeRareCustomerBeverageProfile(customer: ICustomerRare): string {
+  return [
+    `customer:${customer.id}`,
+    `beverages:${serializeStringList(customer.beverageTags)}`,
+  ].join(';');
+}
+
+function serializeTagPriorityRules(rules: RecommendationDataSet['tagPriorityRules']): string {
+  return rules
+    .map((rule) => [
+      rule.id,
+      serializeNumberList(rule.tagIds),
+      serializeStringList(rule.tags),
+    ].join(':'))
+    .sort()
+    .join(';');
+}
+
+function serializeNumberSet(values: Set<number>): string {
+  return serializeNumberList([...values]);
+}
+
+function serializeNumberList(values: number[]): string {
+  return [...values].sort((left, right) => left - right).join(',');
+}
+
+function serializeStringSet(values: Set<string>): string {
+  return serializeStringList([...values]);
+}
+
+function serializeStringList(values: string[]): string {
+  return [...values].sort().join(',');
+}
+
+function serializeNumberRecord(values: Record<number, number>): string {
+  return Object.entries(values)
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([id, qty]) => `${id}:${qty}`)
+    .join(',');
 }
 
 function serializeRecommendationPlanSortContext(context: RecommendationPlanSortContext): string {
@@ -445,20 +623,13 @@ function serializeBudgetContext(context: RecommendationBudgetContext | null): st
   ].join(':');
 }
 
-function serializeRecommendationExclusions(ingredientIds: number[], beverageIds: number[]): string {
-  return [
-    ingredientIds.join(','),
-    beverageIds.join(','),
-  ].join('/');
-}
-
 function buildRecipeSortKey(recipeId: number, extraIngredientIds: number[]): string {
   return `${recipeId}:${normalizeIdList(extraIngredientIds).join(',')}`;
 }
 
-function trimRecommendationCache(cache: Map<string, CachedRecommendation>) {
-  if (cache.size <= 24) return;
-  const keysToDelete = [...cache.keys()].slice(0, cache.size - 24);
+function trimCache<TValue>(cache: Map<string, TValue>, maxSize: number) {
+  if (cache.size <= maxSize) return;
+  const keysToDelete = [...cache.keys()].slice(0, cache.size - maxSize);
   for (const key of keysToDelete) cache.delete(key);
 }
 

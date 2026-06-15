@@ -387,14 +387,6 @@ export function OrderRecommendationPanel({
   const targetCookerName = visibleRecipes[0]?.recipe.cooker
     ?? visiblePreferenceRecipes[0]?.recipe.cooker
     ?? '';
-  const budget = item.plans.find((plan) => plan.budget)?.budget ?? null;
-  const blockedMessages = item.plans.length > 0 && item.plans.every((plan) => plan.bucket === 'blocked')
-    ? [...new Set(item.plans.flatMap((plan) =>
-      plan.conditionResults
-        .filter((result) => result.status === 'fail' && result.severity === 'hard')
-        .map((result) => result.detail),
-    ))].slice(0, 3)
-    : [];
 
   return (
     <div className={compact ? 'rounded-md border border-border p-2' : 'rounded-md border border-border p-3'}>
@@ -409,12 +401,12 @@ export function OrderRecommendationPanel({
                 目标厨具 {targetCookerName}
               </Badge>
             )}
-            {budget && <BudgetBadge budget={budget} />}
+            {item.budget && <BudgetBadge budget={item.budget} />}
             {showDebugDetails && <Badge variant="secondary">{item.order.source}</Badge>}
           </div>
-          {blockedMessages.length > 0 && (
+          {item.blockedMessages.length > 0 && (
             <div className="mt-1 text-xs text-muted-foreground">
-              {blockedMessages.join('；')}
+              {item.blockedMessages.join('；')}
             </div>
           )}
         </div>

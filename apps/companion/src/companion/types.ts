@@ -4,7 +4,7 @@ import type {
   IRareBeverageResult,
   IRareRecipeResult,
 } from '@/lib/types';
-import type { RareOrderRecommendationPlan } from '@/recommendation-engine';
+import type { RareOrderRecommendationPlan, RecommendationBudgetResult } from '@/recommendation-engine';
 
 export type ModTab = 'overview' | 'normal' | 'rare' | 'service' | 'tasks' | 'inventory' | 'help' | 'logs' | 'settings';
 export type OverviewTab = 'status' | 'inventory' | 'actions';
@@ -175,7 +175,9 @@ export interface RuntimeSets {
 
 export interface CachedRecommendation {
   customer: ICustomerRare;
-  plans: RareOrderRecommendationPlan[];
+  preparationPlan: RareOrderRecommendationPlan | null;
+  budget: RecommendationBudgetResult | null;
+  blockedMessages: string[];
   recipes: IRareRecipeResult[];
   beverages: IRareBeverageResult[];
   preferenceRecipes: IRareRecipeResult[];

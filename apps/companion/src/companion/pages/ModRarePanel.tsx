@@ -127,20 +127,24 @@ export function ModRarePanel({
       context: buildRecommendationRuntimeContext(runtime, runtimeSets, preferences, data),
       sortProfile: preferences.recommendationSortProfile,
       sortContext: buildRecommendationPlanSortContext(favorites, selectedCustomer.id, foodTag, beverageTag),
-      limit: MAX_RECOMMENDATION_ROWS * 4,
     });
   }, [beverageTag, data, favorites, foodTag, preferences, runtime, runtimeSets, selectedCustomer]);
 
   const recipes = useMemo(() => {
     if (!selectedCustomer || !foodTag) return [];
-    return deriveRecipeRowsFromPlans(plans, true, preferences.recipeVariantLimitPerBase)
-      .slice(0, MAX_RECOMMENDATION_ROWS);
+    return deriveRecipeRowsFromPlans(plans, {
+      requireOrderTag: true,
+      variantLimitPerBase: preferences.recipeVariantLimitPerBase,
+      limit: MAX_RECOMMENDATION_ROWS,
+    });
   }, [foodTag, plans, preferences.recipeVariantLimitPerBase, selectedCustomer]);
 
   const beverages = useMemo(() => {
     if (!selectedCustomer || !beverageTag) return [];
-    return deriveBeverageRowsFromPlans(plans, true)
-      .slice(0, MAX_RECOMMENDATION_ROWS);
+    return deriveBeverageRowsFromPlans(plans, {
+      requireOrderTag: true,
+      limit: MAX_RECOMMENDATION_ROWS,
+    });
   }, [beverageTag, plans, selectedCustomer]);
 
   if (!runtime || !runtimeSets) return <RuntimeUnavailable />;

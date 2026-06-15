@@ -34,6 +34,11 @@ interface BuildRareOrderPlansOptions {
   sortContext?: RecommendationPlanSortContext;
 }
 
+interface BuildRareOrderPlansFromCandidatesOptions extends BuildRareOrderPlansOptions {
+  foodCandidates: FoodCandidate[];
+  beverageCandidates: BeverageCandidate[];
+}
+
 interface IngredientSearchState {
   ingredients: IIngredient[];
   activeTags: string[];
@@ -51,7 +56,7 @@ export function buildRareOrderPlans({
   requiredFoodTag,
   requiredBeverageTag,
   context,
-  limit = 24,
+  limit,
   sortProfile,
   sortContext,
 }: BuildRareOrderPlansOptions): RareOrderRecommendationPlan[] {
@@ -64,6 +69,38 @@ export function buildRareOrderPlans({
   const foodCandidates = buildRareFoodCandidates(data, demand, context);
   const beverageCandidates = buildRareBeverageCandidates(data, demand, context);
 
+  return buildRareOrderPlansFromCandidates({
+    data,
+    customer,
+    requiredFoodTag,
+    requiredBeverageTag,
+    context,
+    limit,
+    sortProfile,
+    sortContext,
+    foodCandidates,
+    beverageCandidates,
+  });
+}
+
+export function buildRareOrderPlansFromCandidates({
+  data,
+  customer,
+  requiredFoodTag,
+  requiredBeverageTag,
+  context,
+  limit,
+  sortProfile,
+  sortContext,
+  foodCandidates,
+  beverageCandidates,
+}: BuildRareOrderPlansFromCandidatesOptions): RareOrderRecommendationPlan[] {
+  const demand: RareTagOrderDemand = {
+    type: 'rare-tag-order',
+    customer,
+    requiredFoodTag,
+    requiredBeverageTag,
+  };
   const plans: RareOrderRecommendationPlan[] = [];
   for (const food of foodCandidates) {
     for (const beverage of beverageCandidates) {
@@ -75,7 +112,9 @@ export function buildRareOrderPlans({
     return [buildBlockedPlan(demand, foodCandidates[0] ?? null, beverageCandidates[0] ?? null, context, data)];
   }
 
-  return sortRareOrderPlans(plans, sortProfile, sortContext).slice(0, limit);
+  const sortedPlans = sortRareOrderPlans(plans, sortProfile, sortContext);
+  if (limit == null || !Number.isFinite(limit)) return sortedPlans;
+  return sortedPlans.slice(0, Math.max(0, Math.trunc(limit)));
 }
 
 export function sortRareOrderPlans(
