@@ -1,6 +1,6 @@
 # 开发约定与流程
 
-更新日期：2026-06-09
+更新日期：2026-06-15
 
 ## 代码边界
 
@@ -25,8 +25,8 @@
 - 面向用户的文案默认使用中文；Mod UI 需要同时保留中文和英文入口。
 - 不在组件中硬编码平衡值，优先更新结构化数据和类型化逻辑。
 - 伴随窗口 UI 基础组件统一放在 `apps/companion/src/components/ui/`。按钮、输入框、选择框、页签、卡片、徽标、开关、滑杆、选项组、折叠面板、状态卡片、空状态和信息字段都优先使用该目录组件，不要在业务页面复制外部模板组件或手写第二套样式。
-- UI 原语以 Base UI 无样式组件为交互基础，样式由项目 Tailwind token 控制。新增组件要保持工具型窗口的紧凑布局、小圆角、实边框、弱动画和可读高对比，不引入通用后台模板、玻璃拟态、过度圆角或独立视觉体系。
-- `ModWorkbench.tsx` 允许保留业务组合组件，但纯展示组件应下沉到 `components/ui` 或独立业务组件文件。新增页面时先复用 `ListPanel`、`InfoLine`、`EmptyState`、`SwitchField`、`SliderField`、`ChoiceGroup` 和 `Accordion`，避免页面层样式混乱。
+- UI 原语以 Mantine 组件为交互基础，通过 `apps/companion/src/components/ui/` 和 `components/ui-kit` 做项目级适配；样式由 Mantine theme、项目 CSS token 和少量尺寸归一 wrapper 控制。新增组件要保持工具型窗口的紧凑布局、`md` 圆角、实边框、弱动画和可读高对比，不引入通用后台模板、玻璃拟态、过度圆角或独立视觉体系。
+- 页面级代码应继续按页面和业务域拆分到 `apps/companion/src/companion/pages/`、`domain/`、`hooks/`、`features/` 或 `workers/`。新增页面时先复用 `ListPanel`、`InfoLine`、`EmptyState`、`SwitchField`、`SliderField`、`SegmentedControl`、`Tree` 和 `Accordion`，避免页面层样式混乱。
 
 ## 构建验证
 
@@ -68,13 +68,13 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1
 
 - Mod 只读取当前游戏运行时数据，不读取 `.memory` 存档文件。
 - 运行时固定数据读取成功后，C# 侧会把 `DataBaseCore` / `DataBaseCharacter` / `DataBaseLanguage` 结构化为 `RuntimeDataCatalog`，并切换 `DataRepository` 到运行时仓库；伴随窗口收到 `snapshot.runtimeData.isComplete=true` 后，普客/稀客推荐、经营中推荐、任务目标、库存修改页和自动化目标解析都必须使用这份运行时数据集。
-- 本地 API 快照需要避免在 Unity 主线程高频序列化大对象。完整 `RuntimeDataCatalog` 可以被节流省略，前端必须缓存最近一次完整数据并继续使用；不要把缺失的 `snapshot.runtimeData` 当作数据不可用。运行时固定数据读取完成后不得在经营快照热路径重复刷新，未完成时也要做重试间隔保护。新增重扫描或自动化轮询时要记录到 `performanceMs` 或复用现有耗时指标，便于概览页排查掉帧；性能快照只保留近期样本，避免旧耗时长期误导判断。经营扫描指标应尽量按来源拆分，例如 `business.rare.*`、`business.normal.*`、`runtime.cookerSnapshot` 和 `mission.serveTargets`；普客订单快照应优先复用短 TTL 缓存，不要在一次快照发布链路中重复枚举同一批运行时对象。
-- 夜间经营订单优先使用运行时对象；日志捕获仅作为兼容和排障手段。
+- 本地 API 快照需要避免在 Unity 主线程高频序列化大对象。完整 `RuntimeDataCatalog` 可以被节流省略，前端必须缓存最近一次完整数据并继续使用；不要把缺失的 `snapshot.runtimeData` 当作数据不可用。快照内容签名未变化时应复用上一份缓存 JSON，不要为了 `CapturedAtUtc` 或性能数字重复序列化。运行时固定数据读取完成后不得在经营快照热路径重复刷新，未完成时也要做重试间隔保护。新增重扫描或自动化轮询时要记录到 `performanceMs` 或复用现有耗时指标，便于概览页排查掉帧；性能快照只保留近期样本，避免旧耗时长期误导判断。经营扫描指标应尽量按来源拆分，例如 `business.rare.*`、`business.normal.*`、`runtime.cookerSnapshot` 和 `mission.serveTargets`；普客订单快照应优先复用短 TTL 缓存，不要在一次快照发布链路中重复枚举同一批运行时对象。
+- 夜间经营订单优先使用 `SpecialOrderRuntimeCapture` 运行时捕获缓存；捕获缓存为空、诊断开启或需要初始化/回退校验时再扫描 OrderController、HUD、服务面板和桌位控制器。控制器扫描仍要读取活动稀客和预算资金信息，但不应在已有捕获订单时重复做完整订单反射扫描。
 - 夜间经营订单必须按首次出现时间稳定显示；不得因桌号排序或推荐完整度排序让新订单插到旧订单前面。
 - 经营中订单排序支持 `点单顺序` 和 `稀客分组`。默认必须保持点单顺序；稀客分组模式下，同一稀客订单放在一起，稀客组之间按该稀客最早订单出现时间排序，组内仍按点单先后排序。经营中列表、当前点单推荐、专注模式、游戏界面置顶目标和自动化第一单选择必须复用同一排序函数。
 - 稀客/经营中主推荐必须先满足点单料理 Tag 和酒水 Tag；不满足点单的 fallback 只能作为明确标注的“喜好备选”，不得进入收藏置顶、自动化或一键订单使用的正式推荐数组。当前稀客已接取的经营投喂任务指定料理可通过推荐权重中的 `优先任务料理` 排序项提升，但仍必须通过解锁、库存和缺失厨具过滤。料理推荐优先 `foodScore >= 3`，但必须保留“满足点单且低于 3 分”的候选作为正式兜底。
 - 稀客页场景候选必须优先使用运行时数据集；当 `/snapshot.recommendationState.availableRareCustomerIds` 非空时，候选还要按当前存档已记录/解锁稀客过滤。该集合为空表示暂未读取到进度，前端不得因此把候选列表清空。
-- 经营中读取到已摆放厨具快照时，`排除缺失厨具` 可过滤当前场景没有对应厨具的料理；读不到快照或无法映射厨具名时不得误删推荐。料理厨具类型以游戏 `CookSystemManager` 的 `AllAvailableCookerType` 为准，前端只消费本地 API 给出的中文厨具名。设置页的 `同基础料理显示` 控制同一基础料理在稀客页和经营中推荐中最多展示多少个加料变体；该限制只裁剪 UI 展示行，自动化选单必须继续基于完整推荐 plan 构造目标，不能因为 UI 隐藏某个变体而跳过可执行方案。
+- 经营中读取到已摆放厨具快照时，`排除缺失厨具` 可过滤当前场景没有对应厨具的料理；读不到快照或无法映射厨具名时不得误删推荐。料理厨具类型以游戏 `CookSystemManager` 的 `AllAvailableCookerType` 为准，前端只消费本地 API 给出的中文厨具名。设置页的 `同基础料理显示` 控制同一基础料理在稀客页和经营中推荐中最多展示多少个加料变体；该限制只裁剪 UI 展示行。经营中展示行应从料理/酒水候选直接派生，自动化目标应从独立执行候选构造，不能只依赖裁剪后的 UI 行。
 - `游戏界面置顶推荐` 和 `目标厨具高亮` 是两个独立开关。两者可以共享当前第一笔稀客订单的推荐目标，但本地 API 必须分别传递 `enabled` 与 `highlightEnabled`，C# 侧也要分别控制列表置顶补丁和厨具高亮服务。
 - 稀客料理/酒水展示排序由伴随窗口设置页的推荐权重控制。满足点单 Tag 是正式推荐的硬前提；之后由 `RecommendationSortProfile` 的启用项、权重、方向和预设共同决定顺序，默认均衡预设综合任务料理、收藏、稀客偏好、厌恶风险、加料数量、资源压力、成本、利润、酒水库存和当前厨具可做。新增排序项时必须同时接入稀客页、经营中页、专注模式、缓存签名和自动化当前第一单选择，不要让不同入口出现不同排序。
 - 推荐 tag 解析统一维护在 `apps/companion/src/recommendation-engine/tag-resolution.ts`，动态料理 tag 维护在 `dynamic-food-tags.ts`。运行时导出的 `tagPriorityRules` 优先级最高；运行时缺失时只允许使用 `PROJECT_VERIFIED_TAG_PRIORITY_RULES` 这组项目验证规则，不得在其他模块重新硬编码互斥/压制关系。新增或调整 tag 规则必须来自游戏运行时行为、反编译资料或可复现实测，并同步更新该集中模块和相关文档。
@@ -88,7 +88,7 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1
 - 伴随窗口滚动条样式必须跟随主题和背景透明度；不要使用全局 `*::-webkit-scrollbar` 覆盖会刻意隐藏滚动条的导航栏。
 - 伴随窗口内手柄导航应优先处理同一行内的左右移动；range 滑杆获得焦点时，左右方向应调节数值而不是跳到其他按钮。收藏按钮等点击后会改变 UI 状态的控件，应使用稳定 `data-gamepad-focus-key` 恢复焦点。
 - 经营中、专注模式和日志等实时页面的动态内容区应保留稳定容器和紧凑空状态；不要因为暂无订单、暂无预约或暂无日志就直接卸载整块区域，避免数据刷新时页面大幅跳动。
-- 帮助页内容必须保存在 `apps/companion/src/data/help-content.json`，前端只负责搜索、分类和折叠面板渲染。新增用户可见功能或排查流程时，同步更新帮助 JSON，避免只改 README。
+- 帮助页内容必须保存在 `apps/companion/src/data/help-content.json`，前端只负责搜索、目录树和详情渲染。新增用户可见功能或排查流程时，同步更新帮助 JSON，避免只改 README。
 - Unity 场景切换后不要再用固定秒数等待来规避加载问题。日间任务列表、日间地图和稀客邀请必须通过运行态数据入口判断可读性：排除主菜单、夜间经营和经营准备后，优先读取 `DayScene.SceneManager.CurrentActiveMapLabel` / `TargetMapLabel`、`RunTimeDayScene.GetMapNPCs()`、`RunTimeDayScene.RefTrackedNPCAvailability()` 和 `RunTimeScheduler` 数据；不能把 `DaySceneSustainedPannel` 是否激活作为日间数据总门禁，否则常规日间场景会被误判为 UI 初始化中。夜间经营准备读取仍以 `PrepNightScene.UI.IzakayaConfigPannel.OnPanelOpen` / `GoToSpecific` 为 ready 信号，并用 `Cleanup_Generated` / `GotoWork` 清理；进入夜间经营准备时，只能用 `WorkPrepScenePannelRoot` 下活跃的 `IzakayaConfigPannelNew` 和 ready 信号阻断日间读取，不能用泛化的同名面板或残留对象判断。读取代码必须避开不稳定的 IL2CPP 托管枚举路径，尤其不要直接依赖 `IEnumerator.Current`；优先使用 Count/indexer、字段、静态快照或可空单例。读取失败应降级为状态提示并等待下一轮刷新。
 - 运行时静态目录（料理、材料、酒水、普客、稀客、场景）和玩家存档状态（库存、已解锁、流行 Tag、已摆放厨具）必须分层读取。静态目录可用后应立即发布给伴随窗口，让任务、邀请、普客和稀客基础选项可用；玩家存档状态读取失败时只影响库存和推荐可用性，不应阻塞任务和邀请。夜间经营准备阶段在准备面板 ready 后允许读取 `RunTimeStorage.GenerateSaveData()` 与 `RunTimePlayerData.GenerateSaveData()`，用于修改页、普客页和稀客页；但仍不得读取 DayScene 快照、任务列表或稀客邀请。
 - 主菜单 `Main Scene` / `MainMenuPannel` 必须在代码中显式视为非游戏场景，不要只依赖 `NonGameplaySceneKeywords` 默认配置，因为用户已有配置文件不会自动补充新关键词。非游戏场景下不得读取运行时静态目录或玩家存档状态，避免 DataBase/Language 初始化不完整时触发 Unity 空引用。
