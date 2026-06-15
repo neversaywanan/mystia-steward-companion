@@ -4,11 +4,11 @@
 
 ## 代码边界
 
-- 仓库只维护 BepInEx Mod 与 Tauri 伴随窗口，不再维护独立网站和存档导入页面。
+- 仓库维护 BepInEx Mod 与 Tauri 伴随窗口。
 - 伴随窗口入口为 `apps/companion/src/companion/ModWorkbench.tsx`，顶层挂载在 `apps/companion/src/App.tsx`。
 - 推荐算法集中在 `apps/companion/src/lib/normal-recommend.ts`、`apps/companion/src/lib/rare-recommend.ts` 和 `apps/companion/src/lib/tags.ts`。
-- 推荐、库存名称、任务目标和自动化目标只使用 Mod 从游戏运行时读取并通过本地 API 发布的结构化数据；运行时数据未就绪时，伴随窗口显示等待状态，不再回退到外部 JSON。
-- C# Mod 不引用 TypeScript 模块；前端和 Mod 的共享数据通过本地 API 的运行时快照传递，仓库和发布包都不保留旧版推荐 JSON，不要为新增稀客事件变体优先补静态表。
+- 推荐、库存名称、任务目标和自动化目标使用 Mod 从游戏运行时读取并通过本地 API 发布的结构化数据；运行时数据未就绪时，伴随窗口显示等待状态。
+- C# Mod 不引用 TypeScript 模块；前端和 Mod 的共享数据通过本地 API 的运行时快照传递。新增稀客事件变体时，优先确认游戏运行时映射和别名归一化逻辑。
 
 ## 命名约束
 
@@ -81,10 +81,10 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1
 - 本地 API 监听 `127.0.0.1`，避免代理工具干扰 `localhost`；除 `/health` 外，接口必须通过伴随窗口传入的 token 访问。
 - 伴随窗口单实例控制监听 `127.0.0.1:32146`；热键逻辑必须先发送 `show`/`toggle`/`exit` 控制消息，控制端口不可达时才启动伴随进程，避免手柄快捷键重复创建窗口。
 - `F8` 和 `RS Click` 默认用于在游戏和伴随窗口之间切换焦点；伴随窗口聚焦时由 Tauri 前端处理热键并调用后端按设置切回游戏窗口。焦点行为不能写死为隐藏窗口，必须支持保持伴随窗口悬浮只切焦点。手柄切换必须做释放锁存和可配置后端防抖，避免一次长按在两侧窗口间反复触发。伴随窗口内手柄焦点必须优先遵守 `data-gamepad-scope` 区域，不要让顶部页签横向移动跳入页面内容。
-- 伴随窗口透明度通过 Tauri transparent window 和前端 CSS 背景透明度实现；文本、按钮和标签不要整体设置 opacity，以免影响可读性。
+- 伴随窗口透明度通过 Tauri transparent window 和前端 CSS 变量实现；背景透明度只影响窗口背景、面板、弹层和滚动条轨道，文字透明度只影响普通文字、图标和辅助徽章内容，主操作按钮必须保持可读。不要用 Windows `SetLayeredWindowAttributes(..., LWA_ALPHA)` 或其他整窗 alpha 实现背景透明度，因为它会让文字和图标一起变淡。
 - 鼠标穿透锁定必须通过 Tauri 原生窗口 `set_ignore_cursor_events` 实现，不能只使用 CSS `pointer-events`。`F10` 负责切换鼠标穿透；`F8`、`RS Click`、托盘显示/重连和单实例 `show` 控制消息必须自动关闭穿透，避免窗口被唤回后仍无法点击。
 - 伴随窗口根滚动区域必须预留稳定纵向滚动条槽位，避免页面内容因滚动条出现或消失产生横向跳动。
-- 伴随窗口滚动条样式必须跟随主题和窗口透明度；不要使用全局 `*::-webkit-scrollbar` 覆盖会刻意隐藏滚动条的导航栏。
+- 伴随窗口滚动条样式必须跟随主题和背景透明度；不要使用全局 `*::-webkit-scrollbar` 覆盖会刻意隐藏滚动条的导航栏。
 - 伴随窗口内手柄导航应优先处理同一行内的左右移动；range 滑杆获得焦点时，左右方向应调节数值而不是跳到其他按钮。收藏按钮等点击后会改变 UI 状态的控件，应使用稳定 `data-gamepad-focus-key` 恢复焦点。
 - 经营中、专注模式和日志等实时页面的动态内容区应保留稳定容器和紧凑空状态；不要因为暂无订单、暂无预约或暂无日志就直接卸载整块区域，避免数据刷新时页面大幅跳动。
 - 帮助页内容必须保存在 `apps/companion/src/data/help-content.json`，前端只负责搜索、分类和折叠面板渲染。新增用户可见功能或排查流程时，同步更新帮助 JSON，避免只改 README。

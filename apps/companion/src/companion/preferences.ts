@@ -2,7 +2,9 @@ import { isTauriRuntime } from '@/lib/tauri-runtime';
 
 const STORAGE_PREFIX = 'mystia-steward-companion';
 
-const WINDOW_OPACITY_STORAGE_KEY = `${STORAGE_PREFIX}-window-opacity`;
+const BACKGROUND_OPACITY_STORAGE_KEY = `${STORAGE_PREFIX}-background-opacity`;
+const CONTENT_OPACITY_STORAGE_KEY = `${STORAGE_PREFIX}-content-opacity`;
+const LEGACY_WINDOW_OPACITY_STORAGE_KEY = `${STORAGE_PREFIX}-window-opacity`;
 const FOCUS_SWITCH_BEHAVIOR_STORAGE_KEY = `${STORAGE_PREFIX}-focus-switch-behavior`;
 const FOCUS_SWITCH_COOLDOWN_STORAGE_KEY = `${STORAGE_PREFIX}-focus-switch-cooldown-ms`;
 const ALWAYS_ON_TOP_STORAGE_KEY = `${STORAGE_PREFIX}-always-on-top`;
@@ -39,8 +41,10 @@ const SERVICE_ORDER_SORT_MODE_STORAGE_KEY = `${STORAGE_PREFIX}-service-order-sor
 
 export const MAX_FOCUS_RECOMMENDATION_ROWS = 20;
 export const DEFAULT_FOCUS_RECOMMENDATION_ROWS = 8;
-export const DEFAULT_WINDOW_OPACITY = 0.96;
-export const MIN_WINDOW_OPACITY = 0.2;
+export const DEFAULT_BACKGROUND_OPACITY = 0.96;
+export const DEFAULT_CONTENT_OPACITY = 1;
+export const MIN_BACKGROUND_OPACITY = 0.2;
+export const MIN_CONTENT_OPACITY = 0.35;
 export const DEFAULT_FOCUS_SWITCH_COOLDOWN_MS = 800;
 export const MIN_FOCUS_SWITCH_COOLDOWN_MS = 250;
 export const MAX_FOCUS_SWITCH_COOLDOWN_MS = 2000;
@@ -123,7 +127,8 @@ export const DEFAULT_RECIPE_SORT_RULES = buildDefaultSortRules(RECIPE_SORT_OPTIO
 export const DEFAULT_BEVERAGE_SORT_RULES = buildDefaultSortRules(BEVERAGE_SORT_OPTIONS);
 
 export interface CompanionPreferences {
-  windowOpacity: number;
+  backgroundOpacity: number;
+  contentOpacity: number;
   focusSwitchBehavior: FocusSwitchBehavior;
   focusSwitchCooldownMs: number;
   alwaysOnTop: boolean;
@@ -171,7 +176,11 @@ export function normalizeFocusRecommendationLimit(value: number) {
 
 export function readStoredCompanionPreferences(): CompanionPreferences {
   return normalizeCompanionPreferences({
-    windowOpacity: Number(localStorage.getItem(WINDOW_OPACITY_STORAGE_KEY) ?? DEFAULT_WINDOW_OPACITY),
+    backgroundOpacity: readStoredNumber(
+      BACKGROUND_OPACITY_STORAGE_KEY,
+      readStoredNumber(LEGACY_WINDOW_OPACITY_STORAGE_KEY, DEFAULT_BACKGROUND_OPACITY),
+    ),
+    contentOpacity: readStoredNumber(CONTENT_OPACITY_STORAGE_KEY, DEFAULT_CONTENT_OPACITY),
     focusSwitchBehavior: readStoredFocusSwitchBehavior(),
     focusSwitchCooldownMs: Number(
       localStorage.getItem(FOCUS_SWITCH_COOLDOWN_STORAGE_KEY) ?? DEFAULT_FOCUS_SWITCH_COOLDOWN_MS,
@@ -266,9 +275,14 @@ export function getSortOptionLabel<K extends string>(options: SortOption<K>[], k
   return options.find((option) => option.key === key)?.label ?? key;
 }
 
-export function normalizeCompanionPreferences(value: Partial<CompanionPreferences>): CompanionPreferences {
+export function normalizeCompanionPreferences(
+  value: Partial<CompanionPreferences> & { windowOpacity?: number },
+): CompanionPreferences {
+  const legacyBackgroundOpacity = value.backgroundOpacity ?? value.windowOpacity ?? DEFAULT_BACKGROUND_OPACITY;
+
   return {
-    windowOpacity: normalizeWindowOpacity(value.windowOpacity ?? DEFAULT_WINDOW_OPACITY),
+    backgroundOpacity: normalizeBackgroundOpacity(legacyBackgroundOpacity),
+    contentOpacity: normalizeContentOpacity(value.contentOpacity ?? DEFAULT_CONTENT_OPACITY),
     focusSwitchBehavior: value.focusSwitchBehavior === 'keep-visible' ? 'keep-visible' : 'hide',
     focusSwitchCooldownMs: normalizeFocusSwitchCooldownMs(value.focusSwitchCooldownMs ?? DEFAULT_FOCUS_SWITCH_COOLDOWN_MS),
     alwaysOnTop: Boolean(value.alwaysOnTop),
@@ -305,9 +319,14 @@ export function normalizeCompanionPreferences(value: Partial<CompanionPreference
   };
 }
 
-export function normalizeWindowOpacity(value: number) {
-  if (!Number.isFinite(value)) return DEFAULT_WINDOW_OPACITY;
-  return Math.max(MIN_WINDOW_OPACITY, Math.min(1, value));
+export function normalizeBackgroundOpacity(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_BACKGROUND_OPACITY;
+  return Math.max(MIN_BACKGROUND_OPACITY, Math.min(1, value));
+}
+
+export function normalizeContentOpacity(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_CONTENT_OPACITY;
+  return Math.max(MIN_CONTENT_OPACITY, Math.min(1, value));
 }
 
 export function normalizeFocusSwitchCooldownMs(value: number) {
@@ -340,7 +359,9 @@ export function normalizeAutoRollbacks(value: number) {
 
 export function persistCompanionPreferences(preferences: CompanionPreferences) {
   const normalized = normalizeCompanionPreferences(preferences);
-  localStorage.setItem(WINDOW_OPACITY_STORAGE_KEY, String(normalized.windowOpacity));
+  localStorage.setItem(BACKGROUND_OPACITY_STORAGE_KEY, String(normalized.backgroundOpacity));
+  localStorage.setItem(CONTENT_OPACITY_STORAGE_KEY, String(normalized.contentOpacity));
+  localStorage.removeItem(LEGACY_WINDOW_OPACITY_STORAGE_KEY);
   localStorage.setItem(FOCUS_SWITCH_BEHAVIOR_STORAGE_KEY, normalized.focusSwitchBehavior);
   localStorage.setItem(FOCUS_SWITCH_COOLDOWN_STORAGE_KEY, String(normalized.focusSwitchCooldownMs));
   localStorage.setItem(ALWAYS_ON_TOP_STORAGE_KEY, normalized.alwaysOnTop ? '1' : '0');
@@ -377,10 +398,15 @@ export function persistCompanionPreferences(preferences: CompanionPreferences) {
 }
 
 export function applyCompanionVisualPreferences(preferences: CompanionPreferences) {
-  const opacity = normalizeWindowOpacity(preferences.windowOpacity);
-  const percent = `${Math.round(opacity * 100)}%`;
-  document.documentElement.style.setProperty('--companion-window-opacity', String(opacity));
-  document.documentElement.style.setProperty('--companion-window-opacity-percent', percent);
+  const backgroundOpacity = normalizeBackgroundOpacity(preferences.backgroundOpacity);
+  const backgroundPercent = `${Math.round(backgroundOpacity * 100)}%`;
+  const contentOpacity = normalizeContentOpacity(preferences.contentOpacity);
+  const contentPercent = `${Math.round(contentOpacity * 100)}%`;
+
+  document.documentElement.style.setProperty('--companion-background-opacity-percent', backgroundPercent);
+  document.documentElement.style.setProperty('--companion-window-opacity-percent', backgroundPercent);
+  document.documentElement.style.setProperty('--companion-content-opacity', String(contentOpacity));
+  document.documentElement.style.setProperty('--companion-content-opacity-percent', contentPercent);
 }
 
 export async function applyCompanionPreferencesToTauri(

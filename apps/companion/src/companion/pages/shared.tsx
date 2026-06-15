@@ -1,0 +1,691 @@
+import { IconArrowDown, IconArrowUp, IconRotateClockwise } from '@tabler/icons-react';
+import { RecommendationItem, RecommendationMetaBadge, RecommendationTagBadges } from '@/components/RecommendationItem';
+import { CustomerScoreBadges } from '@/components/ScoreBadge';
+import { RegionSelector } from '@/components/RegionSelector';
+import { TagBadge } from '@/components/TagBadge';
+import { Badge, Button, EmptyRow, EmptyState, NumberInput, SegmentedControl, SliderField, Switch, SwitchField } from '@/components/ui-kit';
+import { findBeverageFavorite, findRecipeFavorite, beverageFavoriteKey, recipeFavoriteKey } from '@/companion/domain/favorites';
+import { formatDesk, formatIngredientNamesWithQty, formatIngredientWithQty, formatQtySuffix } from '@/companion/formatters';
+import {
+  MAX_FOCUS_RECOMMENDATION_ROWS,
+  MAX_FOCUS_SWITCH_COOLDOWN_MS,
+  MIN_BACKGROUND_OPACITY,
+  MIN_CONTENT_OPACITY,
+  MIN_FOCUS_SWITCH_COOLDOWN_MS,
+  clampInteger,
+  getSortOptionLabel,
+  normalizeBackgroundOpacity,
+  normalizeContentOpacity,
+  normalizeFocusRecommendationLimit,
+  normalizeFocusSwitchCooldownMs,
+  normalizeSortRules,
+  type SortOption,
+  type SortRule,
+} from '@/companion/preferences';
+import type {
+  FavoriteBeverageEntry,
+  FavoriteData,
+  FavoriteRecipeEntry,
+  OrderRecommendation,
+  RuntimeSets,
+  ToggleBeverageFavorite,
+  ToggleRecipeFavorite,
+} from '@/companion/types';
+import type { buildRecommendationDataIndexes } from '@/lib/recommendation-data';
+import type { INormalBeverageResult, INormalRecipeResult, IRareBeverageResult, IRareRecipeResult, TPlace } from '@/lib/types';
+import {
+  AUTOMATION_SWITCH_CELL,
+  DENSE_TWO_COLUMN_GRID,
+  DENSE_TWO_COLUMN_GRID_TIGHT,
+  MAX_RECOMMENDATION_ROWS,
+  RATING_LABELS,
+  type LowStockEntry,
+} from '@/companion/pages/shared-constants';
+
+export function LowStockColumn({
+  title,
+  entries,
+}: {
+  title: string;
+  entries: LowStockEntry[];
+}) {
+  return (
+    <div>
+      <h3 className="mb-1 text-sm font-medium">{title}</h3>
+      {entries.length === 0 && <EmptyRow text="暂无库存数据" />}
+      {entries.map((item) => (
+        <div key={item.id} className="flex items-center justify-between border-b py-2 text-sm last:border-b-0">
+          <span>{item.name}</span>
+          <span className="text-muted-foreground">{item.qty}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TagSummary({
+  tags,
+  cancelledTags,
+}: {
+  tags: string[];
+  cancelledTags: string[];
+}) {
+  if (tags.length === 0 && cancelledTags.length === 0) return null;
+
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {tags.map((tag) => <TagBadge key={tag} tag={tag} variant="default" />)}
+      {cancelledTags.map((tag) => (
+        <Badge key={`cancelled-${tag}`} variant="outline" className="text-muted-foreground">
+          已抵消 {tag}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+export function RuntimeUnavailable() {
+  return <EmptyState text="尚未读取到游戏实时数据。请确认游戏已加载存档，且 Mod 本地 API 已连接。" />;
+}
+
+export function SwitchControl({
+  label,
+  checked,
+  onCheckedChange,
+  disabled,
+  title,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <SwitchField label={label} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} title={title} />
+  );
+}
+
+export function AutomationSwitchCell({
+  label,
+  checked,
+  onCheckedChange,
+  disabled,
+  title,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <div className={AUTOMATION_SWITCH_CELL}>
+      <SwitchControl label={label} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} title={title} />
+    </div>
+  );
+}
+
+export function FocusLimitInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-sm">
+      <span className="whitespace-nowrap text-muted-foreground">{label}</span>
+      <NumberInput
+        min={1}
+        max={MAX_FOCUS_RECOMMENDATION_ROWS}
+        value={value}
+        onValueChange={(nextValue) => onChange(normalizeFocusRecommendationLimit(nextValue))}
+        className="h-8 w-16"
+      />
+    </label>
+  );
+}
+
+export function FocusSwitchCooldownInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+      <SliderField
+          label="切换冷却时间"
+          value={value}
+          min={MIN_FOCUS_SWITCH_COOLDOWN_MS}
+          max={MAX_FOCUS_SWITCH_COOLDOWN_MS}
+          step={50}
+          valueText={`${value}ms`}
+          description={`单位毫秒，范围 ${MIN_FOCUS_SWITCH_COOLDOWN_MS} - ${MAX_FOCUS_SWITCH_COOLDOWN_MS}。调低后切换更快，过低可能重复触发。`}
+          onChange={(nextValue) => onChange(normalizeFocusSwitchCooldownMs(nextValue))}
+      />
+  );
+}
+
+export function AutomationSliderField({
+  label,
+  value,
+  min,
+  max,
+  unit = '',
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  unit?: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <SliderField
+      label={label}
+      value={value}
+      min={min}
+      max={max}
+      step={1}
+      valueText={`${value}${unit}`}
+      description={`${min}${unit} - ${max}${unit}`}
+      onChange={(nextValue) => onChange(clampInteger(nextValue, min, max, value))}
+    />
+  );
+}
+
+export function BackgroundOpacitySlider({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const percent = Math.round(normalizeBackgroundOpacity(value) * 100);
+
+  return (
+    <SliderField
+      label="背景透明度"
+      value={percent}
+      min={Math.round(MIN_BACKGROUND_OPACITY * 100)}
+      max={100}
+      step={1}
+      valueText={`${percent}%`}
+      description="调整窗口背景、面板、弹层和滚动条轨道透明度。"
+      onChange={(nextPercent) => onChange(normalizeBackgroundOpacity(nextPercent / 100))}
+    />
+  );
+}
+
+export function ContentOpacitySlider({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const percent = Math.round(normalizeContentOpacity(value) * 100);
+
+  return (
+    <SliderField
+      label="文字透明度"
+      value={percent}
+      min={Math.round(MIN_CONTENT_OPACITY * 100)}
+      max={100}
+      step={1}
+      valueText={`${percent}%`}
+      description="调整普通文字、图标和辅助徽章内容透明度；主操作按钮保持清晰。"
+      onChange={(nextPercent) => onChange(normalizeContentOpacity(nextPercent / 100))}
+    />
+  );
+}
+
+export type SettingSegmentedOption<TValue extends string> = {
+  value: TValue;
+  label: string;
+};
+
+export function SettingSegmentedControl<TValue extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: TValue;
+  options: SettingSegmentedOption<TValue>[];
+  onChange: (value: TValue) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="text-sm font-medium">{label}</div>
+      <SegmentedControl
+        value={value}
+        options={options}
+        onValueChange={onChange}
+        className="max-w-full"
+      />
+    </div>
+  );
+}
+
+export function SortRulesControl<K extends string>({
+  rules,
+  options,
+  onChange,
+  onReset,
+}: {
+  rules: SortRule<K>[];
+  options: SortOption<K>[];
+  onChange: (rules: SortRule<K>[]) => void;
+  onReset: () => void;
+}) {
+  const normalizedRules = normalizeSortRules(rules, options);
+  const updateRule = (key: K, next: Partial<SortRule<K>>) => {
+    onChange(normalizedRules.map((rule) => (rule.key === key ? { ...rule, ...next } : rule)));
+  };
+  const moveRule = (index: number, offset: number) => {
+    const nextIndex = index + offset;
+    if (nextIndex < 0 || nextIndex >= normalizedRules.length) return;
+    const next = [...normalizedRules];
+    const [item] = next.splice(index, 1);
+    next.splice(nextIndex, 0, item);
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-2">
+      {normalizedRules.map((rule, index) => {
+        const label = getSortOptionLabel(options, rule.key);
+        return (
+          <div
+            key={rule.key}
+            className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md border border-border steward-background-surface-50 p-2 text-sm"
+          >
+            <label className="flex min-w-0 items-center gap-2">
+              <Switch
+                checked={rule.enabled}
+                onCheckedChange={(enabled) => updateRule(rule.key, { enabled })}
+              />
+              <span className="truncate">{label}</span>
+            </label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 px-2"
+              onClick={() => updateRule(rule.key, { direction: rule.direction === 'desc' ? 'asc' : 'desc' })}
+            >
+              {rule.direction === 'desc' ? '降序' : '升序'}
+            </Button>
+            <div className="flex gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-8 p-0"
+                title="上移"
+                disabled={index === 0}
+                onClick={() => moveRule(index, -1)}
+              >
+                <IconArrowUp className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-8 p-0"
+                title="下移"
+                disabled={index === normalizedRules.length - 1}
+                onClick={() => moveRule(index, 1)}
+              >
+                <IconArrowDown className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+      <Button type="button" size="sm" variant="outline" className="mt-1 gap-1.5" onClick={onReset}>
+        <IconRotateClockwise className="size-3.5" />
+        恢复默认排序
+      </Button>
+    </div>
+  );
+}
+
+export function PlaceToolbar({
+  selectedPlace,
+  detectedPlace,
+  onPlaceChange,
+  onFollowDetectedPlace,
+}: {
+  selectedPlace: TPlace | null;
+  detectedPlace: TPlace | null;
+  onPlaceChange: (place: TPlace) => void;
+  onFollowDetectedPlace: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <RegionSelector value={selectedPlace} onChange={onPlaceChange} />
+      {detectedPlace && (
+        <Button size="sm" variant="outline" onClick={onFollowDetectedPlace}>
+          跟随经营场景: {detectedPlace}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+export function NormalRecipeRow({
+  recipe,
+  index,
+  ownedIngredientQty,
+  ingredientIdByName,
+}: {
+  recipe: INormalRecipeResult;
+  index: number;
+  ownedIngredientQty: Record<number, number>;
+  ingredientIdByName: Map<string, number>;
+}) {
+  const baseRecipe = formatIngredientNamesWithQty(
+    recipe.recipe.ingredients,
+    ownedIngredientQty,
+    ingredientIdByName,
+  ) || '无';
+
+  return (
+    <RecommendationItem
+      index={index}
+      title={recipe.recipe.name}
+      summary={`分数 ${recipe.totalCoverage} · 成本 ${recipe.ingredientCost} · 利润 ${recipe.profit} · 价格 ${recipe.recipe.price}`}
+      inlineMeta={<RecommendationMetaBadge label="厨具" value={recipe.recipe.cooker || '未知'} tone="cooker" />}
+      meta={<RecommendationMetaBadge label="基础配方" value={baseRecipe} tone="base" />}
+    >
+      <div className="mt-1 flex flex-wrap gap-1">
+        {recipe.matchedTags.map((tag) => <TagBadge key={tag} tag={tag} variant="matched" />)}
+      </div>
+      <div className="mt-1">
+        <CustomerScoreBadges scores={recipe.customerScores} />
+      </div>
+    </RecommendationItem>
+  );
+}
+
+export function NormalBeverageRow({
+  beverage,
+  index,
+  ownedBeverageQty,
+}: {
+  beverage: INormalBeverageResult;
+  index: number;
+  ownedBeverageQty: Record<number, number>;
+}) {
+  return (
+    <RecommendationItem
+      index={index}
+      title={beverage.beverage.name}
+      titleSuffix={formatQtySuffix(ownedBeverageQty[beverage.beverage.id])}
+      summary={`分数 ${beverage.totalCoverage} · 价格 ${beverage.beverage.price}`}
+    >
+      <RecommendationTagBadges tags={beverage.beverage.tags} matchedTags={beverage.matchedTags} />
+      <div className="mt-1">
+        <CustomerScoreBadges scores={beverage.customerScores} />
+      </div>
+    </RecommendationItem>
+  );
+}
+
+export function OrderRecommendationPanel({
+  item,
+  runtimeSets,
+  dataIndexes,
+  favorites,
+  favoriteBusyKey,
+  compact = false,
+  recipeLimit = MAX_RECOMMENDATION_ROWS,
+  beverageLimit = MAX_RECOMMENDATION_ROWS,
+  showDebugDetails = false,
+  onToggleRecipeFavorite,
+  onToggleBeverageFavorite,
+}: {
+  item: OrderRecommendation;
+  runtimeSets: RuntimeSets | null;
+  dataIndexes: ReturnType<typeof buildRecommendationDataIndexes>;
+  favorites: FavoriteData;
+  favoriteBusyKey: string;
+  compact?: boolean;
+  recipeLimit?: number;
+  beverageLimit?: number;
+  showDebugDetails?: boolean;
+  onToggleRecipeFavorite: ToggleRecipeFavorite;
+  onToggleBeverageFavorite: ToggleBeverageFavorite;
+}) {
+  const visibleRecipes = item.recipes.slice(0, normalizeFocusRecommendationLimit(recipeLimit));
+  const visibleBeverages = item.beverages.slice(0, normalizeFocusRecommendationLimit(beverageLimit));
+  const visiblePreferenceRecipes = visibleRecipes.length >= 3
+    ? []
+    : item.preferenceRecipes.slice(0, Math.max(0, normalizeFocusRecommendationLimit(recipeLimit) - visibleRecipes.length));
+  const visiblePreferenceBeverages = visibleBeverages.length >= 3
+    ? []
+    : item.preferenceBeverages.slice(0, Math.max(0, normalizeFocusRecommendationLimit(beverageLimit) - visibleBeverages.length));
+  const targetCookerName = visibleRecipes[0]?.recipe.cooker
+    ?? visiblePreferenceRecipes[0]?.recipe.cooker
+    ?? '';
+
+  return (
+    <div className={compact ? 'rounded-md border border-border p-2' : 'rounded-md border border-border p-3'}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-semibold">{item.customer.name} · 桌 {formatDesk(item.order.deskCode)}</div>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <Badge variant="outline">料理 {item.order.foodTag || '无'}</Badge>
+            <Badge variant="outline">酒水 {item.order.beverageTag || '无'}</Badge>
+            {targetCookerName && (
+              <Badge className="steward-tag-extra">
+                目标厨具 {targetCookerName}
+              </Badge>
+            )}
+            {showDebugDetails && <Badge variant="secondary">{item.order.source}</Badge>}
+          </div>
+        </div>
+      </div>
+
+      <div className={compact ? `mt-2 ${DENSE_TWO_COLUMN_GRID_TIGHT}` : `mt-3 ${DENSE_TWO_COLUMN_GRID}`}>
+        <div>
+          <h3 className={compact ? 'mb-1 text-xs font-semibold' : 'mb-2 text-sm font-semibold'}>推荐料理</h3>
+          {visibleRecipes.length === 0 && <EmptyRow text="暂无满足点单的料理" />}
+          <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
+            {visibleRecipes.map((recipe, index) => (
+              <RecipeRecommendationRow
+                key={`${recipe.recipe.id}-${index}`}
+                recipe={recipe}
+                index={index}
+                ownedIngredientQty={runtimeSets?.ownedIngredientQty ?? {}}
+                ingredientIdByName={dataIndexes.ingredientIdByName}
+                favorite={findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe)}
+                favoriteKey={recipeFavoriteKey(item.customer.id, item.order.foodTag, recipe)}
+                favoriteBusyKey={favoriteBusyKey}
+                compact={compact}
+                onToggleFavorite={() => onToggleRecipeFavorite(item.customer, item.order.foodTag, recipe)}
+              />
+            ))}
+            {visiblePreferenceRecipes.length > 0 && (
+              <div className={compact ? 'pt-1' : 'pt-2'}>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">喜好备选（不满足点单）</div>
+                <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
+                  {visiblePreferenceRecipes.map((recipe, index) => (
+                    <RecipeRecommendationRow
+                      key={`fallback-${recipe.recipe.id}-${index}`}
+                      recipe={recipe}
+                      index={visibleRecipes.length + index}
+                      ownedIngredientQty={runtimeSets?.ownedIngredientQty ?? {}}
+                      ingredientIdByName={dataIndexes.ingredientIdByName}
+                      compact={compact}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h3 className={compact ? 'mb-1 text-xs font-semibold' : 'mb-2 text-sm font-semibold'}>推荐酒水</h3>
+          {visibleBeverages.length === 0 && <EmptyRow text="暂无满足点单的酒水" />}
+          <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
+            {visibleBeverages.map((beverage, index) => (
+              <BeverageRecommendationRow
+                key={beverage.beverage.id}
+                beverage={beverage}
+                index={index}
+                ownedBeverageQty={runtimeSets?.ownedBeverageQty ?? {}}
+                favorite={findBeverageFavorite(favorites, item.customer.id, item.order.beverageTag, beverage)}
+                favoriteKey={beverageFavoriteKey(item.customer.id, item.order.beverageTag, beverage)}
+                favoriteBusyKey={favoriteBusyKey}
+                compact={compact}
+                onToggleFavorite={() => onToggleBeverageFavorite(item.customer, item.order.beverageTag, beverage)}
+              />
+            ))}
+            {visiblePreferenceBeverages.length > 0 && (
+              <div className={compact ? 'pt-1' : 'pt-2'}>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">喜好备选（不满足点单）</div>
+                <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
+                  {visiblePreferenceBeverages.map((beverage, index) => (
+                    <BeverageRecommendationRow
+                      key={`fallback-${beverage.beverage.id}`}
+                      beverage={beverage}
+                      index={visibleBeverages.length + index}
+                      ownedBeverageQty={runtimeSets?.ownedBeverageQty ?? {}}
+                      compact={compact}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function RecipeRecommendationRow({
+  recipe,
+  index,
+  ownedIngredientQty,
+  ingredientIdByName,
+  favorite,
+  favoriteKey = '',
+  favoriteBusyKey = '',
+  compact = false,
+  onToggleFavorite,
+}: {
+  recipe: IRareRecipeResult;
+  index: number;
+  ownedIngredientQty: Record<number, number>;
+  ingredientIdByName: Map<string, number>;
+  favorite?: FavoriteRecipeEntry | null;
+  favoriteKey?: string;
+  favoriteBusyKey?: string;
+  compact?: boolean;
+  onToggleFavorite?: () => void;
+}) {
+  const totalCost = recipe.baseCost + recipe.extraCost;
+  const extras = recipe.extraIngredients.length === 0
+    ? '不加料'
+    : recipe.extraIngredients
+      .map((ingredient) => formatIngredientWithQty(ingredient.name, ownedIngredientQty, ingredientIdByName))
+      .join(', ');
+  const baseRecipe = formatIngredientNamesWithQty(
+    recipe.recipe.ingredients,
+    ownedIngredientQty,
+    ingredientIdByName,
+  ) || '无';
+  const busy = favoriteBusyKey === (favorite?.id ?? favoriteKey);
+
+  return (
+    <RecommendationItem
+      index={index}
+      title={recipe.recipe.name}
+      badges={(
+        <>
+          {recipe.missionPriority && (
+            <Badge className="steward-meta-cooker">
+              任务
+            </Badge>
+          )}
+          <Badge variant="secondary">{RATING_LABELS[recipe.rating]}</Badge>
+        </>
+      )}
+      summary={`分数 ${recipe.foodScore} · 成本 ${totalCost}`}
+      inlineMeta={<RecommendationMetaBadge label="厨具" value={recipe.recipe.cooker || '未知'} tone="cooker" />}
+      meta={(
+        <>
+          <RecommendationMetaBadge label="基础配方" value={baseRecipe} tone="base" />
+          <RecommendationMetaBadge label="加料" value={extras} tone="extra" />
+        </>
+      )}
+      compact={compact}
+      favorite={onToggleFavorite ? {
+        active: Boolean(favorite),
+        disabled: busy,
+        activeLabel: '取消收藏该料理方案',
+        inactiveLabel: '收藏该料理方案',
+        focusKey: `recipe-favorite:${favoriteKey}`,
+        onToggle: onToggleFavorite,
+      } : undefined}
+      gamepadRowKey={`recipe:${favoriteKey}`}
+    >
+      {!compact && <TagSummary tags={recipe.allTags} cancelledTags={recipe.cancelledTags} />}
+    </RecommendationItem>
+  );
+}
+
+export function BeverageRecommendationRow({
+  beverage,
+  index,
+  ownedBeverageQty,
+  favorite,
+  favoriteKey = '',
+  favoriteBusyKey = '',
+  compact = false,
+  onToggleFavorite,
+}: {
+  beverage: IRareBeverageResult;
+  index: number;
+  ownedBeverageQty: Record<number, number>;
+  favorite?: FavoriteBeverageEntry | null;
+  favoriteKey?: string;
+  favoriteBusyKey?: string;
+  compact?: boolean;
+  onToggleFavorite?: () => void;
+}) {
+  const busy = favoriteBusyKey === (favorite?.id ?? favoriteKey);
+
+  return (
+    <RecommendationItem
+      index={index}
+      title={beverage.beverage.name}
+      titleSuffix={formatQtySuffix(ownedBeverageQty[beverage.beverage.id])}
+      badges={beverage.meetsRequiredBev ? <Badge variant="secondary">满足点单</Badge> : undefined}
+      summary={`分数 ${beverage.bevScore} · 价格 ${beverage.beverage.price}`}
+      compact={compact}
+      favorite={onToggleFavorite ? {
+        active: Boolean(favorite),
+        disabled: busy,
+        activeLabel: '取消收藏该酒水',
+        inactiveLabel: '收藏该酒水',
+        focusKey: `beverage-favorite:${favoriteKey}`,
+        onToggle: onToggleFavorite,
+      } : undefined}
+      gamepadRowKey={`beverage:${favoriteKey}`}
+    >
+      {!compact && <RecommendationTagBadges tags={beverage.beverage.tags} matchedTags={beverage.matchedTags} />}
+    </RecommendationItem>
+  );
+}

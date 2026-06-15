@@ -16,6 +16,7 @@ src-tauri/target/
 *.local
 AGENTS.md
 dev/
+temp/
 .playwright-cli/
 mods/bepinex/References/*.dll
 mods/bepinex/References/*.pdb

@@ -1,27 +1,36 @@
-import { Switch as SwitchPrimitive } from '@base-ui/react/switch';
+import { Switch as MantineSwitch } from '@mantine/core';
+import type { SwitchProps as MantineSwitchProps } from '@mantine/core';
+import type { LabelHTMLAttributes } from 'react';
 
 import { cn } from '@/lib/utils';
 
-function Switch({
-  className,
-  ...props
-}: SwitchPrimitive.Root.Props) {
+type SwitchProps = Omit<MantineSwitchProps, 'checked' | 'onChange'> & {
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+};
+
+function Switch({ className, checked, onCheckedChange, ...props }: SwitchProps) {
   return (
-    <SwitchPrimitive.Root
+    <MantineSwitch
       data-slot="switch"
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-border bg-muted transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/35 data-checked:border-primary data-checked:bg-primary data-disabled:cursor-not-allowed data-disabled:opacity-50',
-        className,
-      )}
+      data-checked={checked ? 'true' : 'false'}
+      data-disabled={props.disabled ? 'true' : undefined}
+      className={cn('steward-switch', className)}
+      checked={checked}
+      color="steward"
+      size="sm"
+      onChange={(event) => onCheckedChange?.(event.currentTarget.checked)}
       {...props}
-    >
-      <SwitchPrimitive.Thumb
-        data-slot="switch-thumb"
-        className="block size-4 translate-x-0.5 rounded-full bg-background shadow-sm transition-transform data-checked:translate-x-4"
-      />
-    </SwitchPrimitive.Root>
+    />
   );
 }
+
+type SwitchFieldProps = Omit<LabelHTMLAttributes<HTMLLabelElement>, 'onChange'> & {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+};
 
 function SwitchField({
   label,
@@ -30,16 +39,15 @@ function SwitchField({
   className,
   disabled,
   title,
-}: {
-  label: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  className?: string;
-  disabled?: boolean;
-  title?: string;
-}) {
+  ...props
+}: SwitchFieldProps) {
   return (
-    <label className={cn('flex items-center gap-2 text-sm', disabled && 'text-muted-foreground', className)} title={title}>
+    <label
+      className={cn('steward-switch-field flex items-center gap-2.5 text-sm', disabled && 'text-muted-foreground', className)}
+      data-disabled={disabled ? 'true' : undefined}
+      title={title}
+      {...props}
+    >
       <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
       <span className="whitespace-nowrap">{label}</span>
     </label>
@@ -47,3 +55,4 @@ function SwitchField({
 }
 
 export { Switch, SwitchField };
+export type { SwitchFieldProps, SwitchProps };

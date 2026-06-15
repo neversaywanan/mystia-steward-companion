@@ -1,9 +1,22 @@
-import { useMemo, useState } from 'react';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Card, CardContent } from '@/components/ui/card';
-import { EmptyState, ListPanel } from '@/components/ui/display';
-import { Input } from '@/components/ui/input';
+import type { ReactNode } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  IconChevronRight,
+  IconFileText,
+  IconFolder,
+  IconFolderOpen,
+} from '@tabler/icons-react';
+import {
+  Card,
+  CardContent,
+  EmptyState,
+  Input,
+  Tree,
+  useTree,
+} from '@/components/ui-kit';
+import type { RenderTreeNodePayload, TreeNodeData } from '@/components/ui-kit';
 import helpContent from '@/data/help-content.json';
+import { cn } from '@/lib/utils';
 
 interface HelpContent {
   version: number;
@@ -30,15 +43,81 @@ interface HelpItem {
 
 const HELP_CONTENT = helpContent as HelpContent;
 
+type HelpNodeMeta =
+  | { type: 'category'; category: HelpCategory }
+  | { type: 'item'; category: HelpCategory; item: HelpItem };
+
+interface SelectedHelpItem {
+  category: HelpCategory;
+  item: HelpItem;
+}
+
 export function ModHelpPanel() {
   const [query, setQuery] = useState('');
+  const [selectedItemId, setSelectedItemId] = useState(
+    () => HELP_CONTENT.categories[0]?.items[0]?.id ?? '',
+  );
   const normalizedQuery = normalizeHelpSearchText(query);
   const filteredCategories = useMemo(
     () => filterHelpCategories(HELP_CONTENT.categories, normalizedQuery),
     [normalizedQuery],
   );
+  const { treeData, metaByValue } = useMemo(
+    () => buildHelpTree(filteredCategories),
+    [filteredCategories],
+  );
+  const selectedContext = useMemo(
+    () => findVisibleHelpItem(filteredCategories, selectedItemId) ?? getFirstVisibleHelpItem(filteredCategories),
+    [filteredCategories, selectedItemId],
+  );
+  const selectedTreeValue = selectedContext ? getItemTreeValue(selectedContext.item.id) : undefined;
   const totalItems = HELP_CONTENT.categories.reduce((sum, category) => sum + category.items.length, 0);
   const visibleItems = filteredCategories.reduce((sum, category) => sum + category.items.length, 0);
+
+  const renderNode = useCallback(
+    ({ node, expanded, hasChildren, selected, elementProps }: RenderTreeNodePayload) => {
+      const { className, onClick, ...labelProps } = elementProps;
+      const meta = metaByValue.get(node.value);
+      const isCategory = meta?.type === 'category';
+      const FolderIcon = expanded ? IconFolderOpen : IconFolder;
+      const NodeIcon = isCategory ? FolderIcon : IconFileText;
+      const itemCount = isCategory ? meta.category.items.length : undefined;
+
+      return (
+        <div
+          {...labelProps}
+          className={cn(
+            className,
+            'steward-tree-label flex min-w-0 items-center gap-2 px-2 py-1 text-sm',
+            selected && 'font-medium',
+          )}
+          data-gamepad-clickable="true"
+          onClick={(event) => {
+            onClick(event);
+            if (meta?.type === 'item') {
+              setSelectedItemId(meta.item.id);
+            }
+          }}
+        >
+          <IconChevronRight
+            aria-hidden="true"
+            className={cn(
+              'size-3.5 flex-none transition-transform',
+              expanded && 'rotate-90',
+              !hasChildren && 'opacity-0',
+            )}
+            stroke={1.8}
+          />
+          <NodeIcon aria-hidden="true" className="size-4 flex-none text-muted-foreground" stroke={1.7} />
+          <span className="min-w-0 flex-1 truncate">{node.label}</span>
+          {itemCount !== undefined && (
+            <span className="flex-none text-xs text-muted-foreground">{itemCount}</span>
+          )}
+        </div>
+      );
+    },
+    [metaByValue],
+  );
 
   return (
     <div className="space-y-4">
@@ -66,52 +145,85 @@ export function ModHelpPanel() {
       {filteredCategories.length === 0 ? (
         <EmptyState text="没有匹配的帮助内容" />
       ) : (
-        <div className="space-y-3">
-          {filteredCategories.map((category) => (
-            <ListPanel
-              key={category.id}
-              title={category.title}
-              action={<span className="text-xs text-muted-foreground">{category.items.length} 项</span>}
-            >
-              {category.description && (
-                <p className="mb-3 text-sm text-muted-foreground">{category.description}</p>
-              )}
-              <div className="space-y-2">
-                {category.items.map((item) => (
-                  <HelpDisclosure key={item.id} item={item} />
-                ))}
+        <div className="grid gap-3 lg:grid-cols-[18rem_minmax(0,1fr)]">
+          <Card className="min-w-0">
+            <CardContent className="p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold">目录</h3>
+                <span className="text-xs text-muted-foreground">{filteredCategories.length} 类</span>
               </div>
-            </ListPanel>
-          ))}
+              <HelpTreeNavigation
+                key={normalizedQuery}
+                data={treeData}
+                renderNode={renderNode}
+                selectedTreeValue={selectedTreeValue}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="min-w-0">
+            <CardContent className="p-4">
+              {selectedContext ? (
+                <HelpDetail selected={selectedContext} />
+              ) : (
+                <EmptyState text="请选择一个帮助条目" />
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>
   );
 }
 
-function HelpDisclosure({ item }: { item: HelpItem }) {
+function HelpTreeNavigation({
+  data,
+  renderNode,
+  selectedTreeValue,
+}: {
+  data: TreeNodeData[];
+  renderNode: (payload: RenderTreeNodePayload) => ReactNode;
+  selectedTreeValue?: string;
+}) {
+  const initialExpandedState = useMemo(() => getTreeExpandedStateFromData(data), [data]);
+  const tree = useTree({
+    initialExpandedState,
+    selectedState: selectedTreeValue ? [selectedTreeValue] : [],
+  });
+
   return (
-    <Accordion defaultValue={[]}>
-      <AccordionItem value={item.id}>
-        <AccordionTrigger data-gamepad-clickable="true">
-          <div className="min-w-0">
-            <div className="font-medium">{item.title}</div>
-            {item.summary && <div className="mt-1 text-xs text-muted-foreground">{item.summary}</div>}
-          </div>
-        </AccordionTrigger>
-        <AccordionContent className="space-y-3">
-          {item.steps && item.steps.length > 0 && (
-            <HelpTextBlock title="操作" items={item.steps} ordered />
-          )}
-          {item.notes && item.notes.length > 0 && (
-            <HelpTextBlock title="说明" items={item.notes} />
-          )}
-          {item.warnings && item.warnings.length > 0 && (
-            <HelpTextBlock title="注意" items={item.warnings} tone="warning" />
-          )}
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
+    <Tree
+      tree={tree}
+      data={data}
+      renderNode={renderNode}
+      withLines
+      className="max-h-[min(58vh,34rem)] overflow-y-auto pr-1"
+    />
+  );
+}
+
+function HelpDetail({ selected }: { selected: SelectedHelpItem }) {
+  const { category, item } = selected;
+  return (
+    <div className="min-w-0">
+      <div className="text-xs font-medium text-muted-foreground">{category.title}</div>
+      <h3 className="mt-1 text-base font-semibold leading-snug">{item.title}</h3>
+      {item.summary && <p className="mt-2 text-sm text-muted-foreground">{item.summary}</p>}
+      {category.description && (
+        <p className="mt-2 text-xs text-muted-foreground">{category.description}</p>
+      )}
+      <div className="mt-4 space-y-4 text-sm">
+        {item.steps && item.steps.length > 0 && (
+          <HelpTextBlock title="操作" items={item.steps} ordered />
+        )}
+        {item.notes && item.notes.length > 0 && (
+          <HelpTextBlock title="说明" items={item.notes} />
+        )}
+        {item.warnings && item.warnings.length > 0 && (
+          <HelpTextBlock title="注意" items={item.warnings} tone="warning" />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -167,4 +279,60 @@ function helpItemMatchesQuery(category: HelpCategory, item: HelpItem, query: str
 
 function normalizeHelpSearchText(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function buildHelpTree(categories: HelpCategory[]): {
+  treeData: TreeNodeData[];
+  metaByValue: Map<string, HelpNodeMeta>;
+} {
+  const metaByValue = new Map<string, HelpNodeMeta>();
+  const treeData = categories.map((category) => {
+    const categoryValue = getCategoryTreeValue(category.id);
+    metaByValue.set(categoryValue, { type: 'category', category });
+
+    return {
+      label: category.title,
+      value: categoryValue,
+      children: category.items.map((item) => {
+        const itemValue = getItemTreeValue(item.id);
+        metaByValue.set(itemValue, { type: 'item', category, item });
+
+        return {
+          label: item.title,
+          value: itemValue,
+        };
+      }),
+    };
+  });
+
+  return { treeData, metaByValue };
+}
+
+function getTreeExpandedStateFromData(data: TreeNodeData[]): Record<string, boolean> {
+  return Object.fromEntries(data.map((node) => [node.value, true]));
+}
+
+function findVisibleHelpItem(categories: HelpCategory[], itemId: string): SelectedHelpItem | undefined {
+  for (const category of categories) {
+    const item = category.items.find((candidate) => candidate.id === itemId);
+    if (item) {
+      return { category, item };
+    }
+  }
+
+  return undefined;
+}
+
+function getFirstVisibleHelpItem(categories: HelpCategory[]): SelectedHelpItem | undefined {
+  const category = categories.find((candidate) => candidate.items.length > 0);
+  const item = category?.items[0];
+  return category && item ? { category, item } : undefined;
+}
+
+function getCategoryTreeValue(id: string): string {
+  return `category:${id}`;
+}
+
+function getItemTreeValue(id: string): string {
+  return `item:${id}`;
 }

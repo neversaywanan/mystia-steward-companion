@@ -2,7 +2,7 @@
 
 ## 当前项目定位
 
-仓库项目名统一为 `mystia-steward-companion`，已经收敛为《东方夜雀食堂》BepInEx IL2CPP Mod 与 Tauri 桌面伴随窗口。旧的浏览器工具、导入页面、路由和独立验收流程不再维护。
+仓库项目名统一为 `mystia-steward-companion`，定位为《东方夜雀食堂》BepInEx IL2CPP Mod 与 Tauri 桌面伴随窗口。
 
 ## 关键目录
 
@@ -12,17 +12,17 @@
 
 ## 开发事实
 
-- Mod 不编译引用 `Assembly-CSharp.dll`，运行时通过反射读取游戏已加载的 IL2CPP interop 类型。
+- Mod 不编译引用额外的游戏业务 DLL，运行时通过反射读取游戏已加载的 IL2CPP interop 类型。
 - 用户可见项目名、安装目录和发布产物使用 `mystia-steward-companion`；旧名称只保留在兼容迁移和上游来源说明中。
 - `References/` 只放本机编译 DLL，不提交仓库。
-- 推荐数据来自游戏运行时 `RuntimeDataCatalog`；仓库不再保留旧版推荐 JSON，`build-release.ps1` 和发布包不再同步或包含 Mod `Data/`。
+- 推荐数据来自游戏运行时 `RuntimeDataCatalog`；`build-release.ps1` 和发布包只包含 Mod DLL 与伴随窗口程序。
 - 独立伴随窗口通过 `127.0.0.1:32145` 读取运行态；除 `/health` 外，本地 API 使用 `X-Mystia-Steward-Companion-Token` 授权。
 - 伴随窗口控制端口固定为 `127.0.0.1:32146`，支持 `show`、`toggle`、`exit` 消息；Mod 热键应先通知已有窗口，控制端口不可达时才启动新进程。
 - 伴随窗口会在 Tauri app data 目录保存 `window-state.txt`，记录外框位置和内框尺寸；启动时恢复大小和仍在显示器范围内的位置，防止换显示器后窗口离屏。
-- 伴随窗口 `设置` 页负责窗口透明度、焦点切换行为、切换冷却时间、置顶、鼠标穿透锁定、主题、手柄导航、BepInEx 原生日志窗口、缺失厨具过滤、任务料理优先、经营中订单排序、料理/酒水推荐排序、实验性游戏界面置顶、目标厨具高亮和实验性自动化总开关。透明度通过 Tauri transparent window + CSS 背景 alpha 实现，文字不随背景变淡；稀客专注模式的料理/酒水显示数量在专注模式浮层内调整。鼠标穿透通过 Tauri 原生窗口忽略鼠标事件实现，`F10` 切换，`F8`/`RS Click`/托盘显示会自动关闭穿透。
+- 伴随窗口 `设置` 页负责背景透明度、文字透明度、焦点切换行为、切换冷却时间、置顶、鼠标穿透锁定、主题、手柄导航、BepInEx 原生日志窗口、缺失厨具过滤、任务料理优先、经营中订单排序、料理/酒水推荐排序、实验性游戏界面置顶、目标厨具高亮和实验性自动化总开关。背景透明度通过 Tauri transparent window + CSS 背景 alpha 实现，旧 `windowOpacity` 会迁移为背景透明度；文字透明度单独影响普通文字、图标和辅助徽章内容，主操作按钮保持不透明；稀客专注模式的料理/酒水显示数量在专注模式浮层内调整。鼠标穿透通过 Tauri 原生窗口忽略鼠标事件实现，`F10` 切换，`F8`/`RS Click`/托盘显示会自动关闭穿透。
 - 伴随窗口固定包含 `概览`、`普客`、`稀客`、`经营中`、`任务`、`修改`、`帮助`、`设置` 页签；`日志` 页签只在 `显示调试信息` 开启后显示。帮助页内容来自 `apps/companion/src/data/help-content.json`，页面只做搜索和折叠面板渲染；用户可见功能或排查流程变化时需要同步该 JSON。
 - 伴随窗口 UI 基础组件集中在 `apps/companion/src/components/ui/`。当前项目组件层包括 Base UI 封装的按钮、输入、选择框、页签、开关、滑杆、折叠面板，以及项目展示组件 `ListPanel`、`InfoLine`、`StatusCard`、`Metric`、`EmptyRow`、`EmptyState` 和选项组。后续不要继续复制外部模板风格组件，也不要在业务页面手写第二套开关/滑杆/卡片样式。
-- 伴随窗口根滚动区域固定预留纵向滚动条槽位，避免页面高度变化时滚动条挤占宽度造成内容横向跳动；窗口、下拉和日志滚动条使用主题色并跟随透明度。
+- 伴随窗口根滚动区域固定预留纵向滚动条槽位，避免页面高度变化时滚动条挤占宽度造成内容横向跳动；窗口、下拉和日志滚动条使用主题色并跟随背景透明度。
 - 焦点切换支持两种模式：隐藏伴随窗口再聚焦游戏，或保持伴随窗口悬浮并只聚焦游戏。保持悬浮依赖窗口置顶，独占全屏游戏可能覆盖置顶窗口，推荐窗口化或无边框窗口化。
 - 伴随窗口退出跟随不只依赖本地 API `/health` 失联，还会监控启动参数中的 `--game-pid`。游戏窗口 X、游戏内退出按钮、或 Unity 退出阶段未及时发送 `exit` 控制消息时，都应由 PID 监控兜底关闭伴随窗口。
 - `修改` 页通过 `/inventory/set` 和 `/inventory/bulk-set` 在 Unity 主线程写入当前运行时材料和酒水库存；页面只保留单项 `-10`、`+10`、`99` 和当前存档可编辑材料/酒水批量设为 `99` 快捷按钮，用户仍需在游戏内保存才能持久化。
@@ -60,7 +60,7 @@
 - 稀客自动化匹配运行时捕获订单时要兼容事件变体名称和不完整 Tag。强买强卖等变体可能显示 `Tewi_HardSell`，捕获到的 `foodTag` 可能为空，`beverageTag` 可能是“请给我甘的饮料”这类完整句子；同桌且对象仍有效的捕获订单应优先保留，Tag 匹配允许包含关系，不要只做完全相等。
 - 手动事件稀客订单不一定走普通 `PostGenerateOrder` 路径。运行时捕获需要覆盖 `GuestsManager.SetManualControllerOrderInternal`，并在 `EvaulateManualOrder` / `EndDlc4SpecialManualOrder` 清理缓存，否则订单会在列表中一闪而过，无法进入自动化流程。项目不再解析 Unity/BepInEx 控制台订单日志，稀客点单必须来自运行时订单对象、控制器、HUD/面板或运行时缓存。
 - 诊断开启且经营数据扫描触发时，运行时固定数据会按主题写到诊断目录：`runtime-static-data.log` 映射稀客与 `aliasSource`、`runtime-tags.log` 标签和 TagRule、`runtime-database-diff.log` 核心食材/酒水/料理表对照与读取方式、`runtime-guests.log` 普客/稀客/事件变体、`runtime-izakayas.log` 场景和客人池。游戏数据库未初始化时每 5 秒重试，日志头部 `Complete: True` 表示读取成功。
-- 运行时固定数据不只写诊断日志，也会构造成 `RuntimeDataCatalog` 并发布到 `/snapshot.runtimeData`。伴随窗口只使用运行时料理、食材、酒水、普客和稀客数据；`runtimeData.isComplete=false` 时显示等待运行时数据，不使用内置 JSON 兜底。排查数据依赖时，先看概览页“推荐数据”是否显示“游戏运行时”，再检查 `runtime-static-data.log`、`runtime-database-diff.log`、`runtime-guests.log` 的 `Complete: True`。
+- 运行时固定数据不只写诊断日志，也会构造成 `RuntimeDataCatalog` 并发布到 `/snapshot.runtimeData`。伴随窗口使用运行时料理、食材、酒水、普客和稀客数据；`runtimeData.isComplete=false` 时显示等待运行时数据。排查数据依赖时，先看概览页“推荐数据”是否显示“游戏运行时”，再检查 `runtime-static-data.log`、`runtime-database-diff.log`、`runtime-guests.log` 的 `Complete: True`。
 - 特殊经营场景适配已从运行时代码中移除。`RecommendationState`、本地 API、前端排序和 C# 推荐镜像不再发布或使用特殊目标 Tag；稀客、普客推荐和自动化都保持标准料理/酒水链路，普客完整自动化保留。已分析过的 `Story_WackyCookingCompetition` 与 `Story_BloodPondHell` 线索记录在 `docs/special-business-scenes-notes.md`，后续若恢复适配必须先验证原生移动、送达和评价副作用。
 - 稀客订单专注模式支持精简模式和料理/酒水显示数量配置；精简模式隐藏推荐料理 Tag 并压缩推荐面板间距，显示数量包含收藏置顶项。
 - 实验性自动化由设置页总开关启用，经营中页按稀客订单和普客订单分组配置。稀客使用 `autoPrep*` 阶段配置，普客使用 `autoNormal*` 阶段配置；普客送酒、开始料理、收取、送料理、完成订单和出错暂停互不复用。设置页参数控制稀客/普客并发、稀客送餐盘等待、普客保温箱复查、最大重试和最大回退，默认值为 `2`、`3`、`30s`、`45s`、`3`、`2`；稀客完成订单写入每轮最多执行 1 笔，普客按普客并发数处理。开启自动开始料理后固定尝试完成原生 QTE 奖励结算，不再提供跳过或完成 QTE 的配置开关；该流程不会打开游戏音游面板，失败时只显示诊断并继续料理流程。稀客取酒或收取料理后可立即触发一次单项送达，减少等下一轮轮询导致的送餐盘占用；普客仍必须先写入游戏料理暂存容器，开启送料理/完成订单时再在同一轮尽快转送订单，不允许直接跳过保温箱或送餐盘等原生容器链路。普客自动化需要开启“启用普客处理”且至少开启一个实际阶段；临时失败应继续等待并重试，非临时失败才按对应订单类型配置暂停。稀客与普客暂停状态不能共用，普客内部也要按订单 key 隔离暂停。

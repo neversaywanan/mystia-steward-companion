@@ -9,6 +9,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::webview::Color;
 use tauri::{
     Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, Position, Size, WebviewWindow,
     Window, WindowEvent,
@@ -173,6 +174,7 @@ fn apply_companion_preferences(
     }
 
     if let Some(window) = app.get_webview_window("main") {
+        apply_window_transparent_background(&window);
         let _ = window.set_always_on_top(always_on_top);
     }
 }
@@ -316,6 +318,10 @@ fn try_begin_window_switch(switch_state: &Arc<Mutex<Option<Instant>>>, cooldown_
 
 fn normalize_window_switch_cooldown_ms(value: u64) -> u64 {
     value.clamp(MIN_WINDOW_SWITCH_COOLDOWN_MS, MAX_WINDOW_SWITCH_COOLDOWN_MS)
+}
+
+fn apply_window_transparent_background(window: &WebviewWindow) {
+    let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
 }
 
 struct LocalApiTarget {
@@ -725,6 +731,7 @@ fn main() {
         .setup(|app| {
             setup_tray(app)?;
             if let Some(window) = app.get_webview_window("main") {
+                apply_window_transparent_background(&window);
                 restore_window_state(&window);
             }
             let app_handle = app.handle().clone();

@@ -1,8 +1,8 @@
 /** 普客匹配分颜色：0灰、1~2橙、3+粉 */
 function getScoreColor(score: number) {
-  if (score >= 3) return 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-200';
-  if (score >= 1) return 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200';
-  return 'bg-gray-100 text-gray-400 dark:bg-stone-800 dark:text-stone-400';
+  if (score >= 3) return 'steward-score-high';
+  if (score >= 1) return 'steward-score-mid';
+  return 'steward-score-low';
 }
 
 export function CustomerScoreBadges({

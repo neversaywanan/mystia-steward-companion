@@ -1,0 +1,930 @@
+import {
+  didCompleteStep,
+  emptyNormalAutoOrderState,
+  getAutomationStepLabel,
+  isAutomationTimestampStale,
+  type AutoFirstOrderState,
+  type NormalAutoOrderState,
+  type OrderPreparationResponse,
+  type RareAutomationBeverageTarget,
+  type RareAutomationRecipeTarget,
+} from '@/companion/automation-state';
+import {
+  buildAutomationCookerCapacity,
+  getCookerSlotCapacity,
+  getNormalCookerRequirement,
+  getRareCookerRequirement,
+  resolveCookerTypeId,
+} from '@/companion/domain/cookers';
+import {
+  findBeverageFavorite,
+  findRecipeFavorite,
+  normalizeIdList,
+} from '@/companion/domain/favorites';
+import {
+  sortNightOrderRows,
+  sortNormalOrders,
+} from '@/companion/domain/sorting';
+import { formatDesk } from '@/companion/formatters';
+import type { CompanionPreferences, ServiceOrderSortMode } from '@/companion/preferences';
+import type {
+  AutomationCookerCycle,
+  AutomationCookerResourceRow,
+  AutomationResourceOverview,
+  AutomationTrayResourceRow,
+  CookerRequirement,
+  CookerReservationResult,
+  FavoriteBeverageEntry,
+  FavoriteData,
+  FavoriteRecipeEntry,
+  GameUiPinningTarget,
+  NightBusinessOrder,
+  NormalAutoOrderDiagnostic,
+  NormalBusinessOrder,
+  NormalCookerDemand,
+  OrderRecommendation,
+  RareAutoOrderDiagnostic,
+  RecommendationStateSnapshot,
+} from '@/companion/types';
+import {
+  DEFAULT_RECOMMENDATION_DATA,
+  buildRecommendationDataIndexes,
+  type RecommendationDataSet,
+} from '@/lib/recommendation-data';
+import type { IRareBeverageResult, IRareRecipeResult } from '@/lib/types';
+
+const NORMAL_AUTO_RECOVERABLE_PAUSE_RETRY_MS = 10000;
+const DEFAULT_DATA_INDEXES = buildRecommendationDataIndexes(DEFAULT_RECOMMENDATION_DATA);
+
+export type OrderPreparationSelection =
+  | {
+      ok: true;
+      item: OrderRecommendation;
+      recipe: IRareRecipeResult | null;
+      beverage: IRareBeverageResult | null;
+      recipeTarget: RareAutomationRecipeTarget | null;
+      beverageTarget: RareAutomationBeverageTarget | null;
+      recipeFavorite: FavoriteRecipeEntry | null;
+      beverageFavorite: FavoriteBeverageEntry | null;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+export type ValidOrderPreparationSelection = Extract<OrderPreparationSelection, { ok: true }>;
+
+export function buildNormalCookerDemand(
+  orders: NormalBusinessOrder[],
+  states: Map<string, NormalAutoOrderState>,
+  preferences: CompanionPreferences,
+  runtime: RecommendationStateSnapshot | null | undefined,
+  now: number,
+  data: RecommendationDataSet = DEFAULT_RECOMMENDATION_DATA,
+): NormalCookerDemand {
+  const counts = new Map<string, number>();
+  const labels = new Map<string, string[]>();
+  if (!preferences.automationEnabled || !preferences.autoNormalOrderEnabled || !preferences.autoNormalStartCooking) {
+    return { counts, labels };
+  }
+
+  const capacity = buildAutomationCookerCapacity(runtime);
+  let reservedOrders = 0;
+  for (const order of sortNormalOrders(orders).filter((item) => !item.isFulfilled)) {
+    const state = states.get(buildNormalAutoOrderKey(order));
+    if (!shouldAttemptNormalCooking(order, state, preferences, now)) continue;
+
+    const cooker = getNormalCookerRequirement(order, data);
+    if (!cooker) continue;
+
+    const limit = getCookerSlotCapacity(cooker.key, capacity);
+    const used = counts.get(cooker.key) ?? 0;
+    if (used >= limit) continue;
+
+    counts.set(cooker.key, used + 1);
+    const items = labels.get(cooker.key) ?? [];
+    items.push(`桌 ${formatDesk(order.deskCode)} · ${order.foodName || `#${order.foodId}`}`);
+    labels.set(cooker.key, items);
+    reservedOrders += 1;
+    if (reservedOrders >= preferences.autoNormalConcurrency) break;
+  }
+
+  return { counts, labels };
+}
+
+export function buildAutomationResourceOverview({
+  runtime,
+  recommendations,
+  favorites,
+  preferences,
+  normalOrders,
+  rareDiagnostics,
+  normalDiagnostics,
+  data,
+}: {
+  runtime: RecommendationStateSnapshot | null;
+  recommendations: OrderRecommendation[];
+  favorites: FavoriteData;
+  preferences: CompanionPreferences;
+  normalOrders: NormalBusinessOrder[];
+  rareDiagnostics: RareAutoOrderDiagnostic[];
+  normalDiagnostics: NormalAutoOrderDiagnostic[];
+  data: RecommendationDataSet;
+}): AutomationResourceOverview {
+  if (!preferences.automationEnabled) {
+    return { cookers: [], tray: [] };
+  }
+
+  const capacity = buildAutomationCookerCapacity(runtime);
+  const cookerRows = new Map<string, AutomationCookerResourceRow>();
+  for (const [key, count] of capacity.entries()) {
+    ensureCookerResourceRow(cookerRows, key, key, count);
+  }
+
+  const normalDiagnosticByKey = new Map(normalDiagnostics.map((item) => [item.orderKey, item]));
+  if (preferences.autoNormalOrderEnabled && preferences.autoNormalStartCooking) {
+    let normalReserved = 0;
+    for (const order of sortNormalOrders(normalOrders).filter((item) => !item.isFulfilled)) {
+      if (normalReserved >= preferences.autoNormalConcurrency) break;
+      const diagnostic = normalDiagnosticByKey.get(buildNormalAutoOrderKey(order));
+      if (diagnostic?.prepared || diagnostic?.collected || diagnostic?.paused || diagnostic?.hasServedFood) continue;
+      const cooker = getNormalCookerRequirement(order, data);
+      if (!cooker) continue;
+      const row = ensureCookerResourceRow(cookerRows, cooker.key, cooker.label, getCookerSlotCapacity(cooker.key, capacity));
+      if (row.normalReserved + row.rareReserved >= row.capacity) continue;
+      row.normalReserved += 1;
+      row.labels.push(`普客 桌 ${formatDesk(order.deskCode)} · ${order.foodName || `#${order.foodId}`}`);
+      normalReserved += 1;
+    }
+  }
+
+  const rareDiagnosticByKey = new Map(rareDiagnostics.map((item) => [item.orderKey, item]));
+  if (preferences.autoPrepStartCooking) {
+    const candidates = selectOrderPreparationCandidates(
+      recommendations,
+      favorites,
+      preferences,
+      preferences.autoRareConcurrency,
+      new Map(),
+    );
+    for (const selection of candidates.selections) {
+      const diagnostic = rareDiagnosticByKey.get(buildAutoOrderKey(selection.item));
+      if (diagnostic?.prepared || diagnostic?.hasServedFood || diagnostic?.paused) continue;
+      const cooker = getRareCookerRequirement(selection.recipeTarget);
+      if (!cooker) continue;
+      const row = ensureCookerResourceRow(cookerRows, cooker.key, cooker.label, getCookerSlotCapacity(cooker.key, capacity));
+      if (row.normalReserved + row.rareReserved >= row.capacity) continue;
+      row.rareReserved += 1;
+      row.labels.push(`稀客 ${selection.item.order.guestName || '未知'} · 桌 ${formatDesk(selection.item.order.deskCode)}`);
+    }
+  }
+
+  return {
+    cookers: [...cookerRows.values()]
+      .filter((row) => row.normalReserved + row.rareReserved > 0)
+      .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN')),
+    tray: buildTrayResourceRows(rareDiagnostics),
+  };
+}
+
+export function isNormalOrderCollected(order: NormalBusinessOrder, state: NormalAutoOrderState | undefined): boolean {
+  if (state?.collected) return true;
+  if (order.hasStoredFoodReceipt) return true;
+  return Boolean(order.hasStoredFood && (state?.prepared || state?.collected));
+}
+
+export function syncNormalOrderStateWithSnapshot(
+  order: NormalBusinessOrder,
+  state: NormalAutoOrderState | undefined,
+  now: number,
+  preferences: CompanionPreferences,
+): NormalAutoOrderState | undefined {
+  const snapshotCollected = isNormalOrderCollected(order, state);
+  const snapshotFoodDelivered = order.hasServedFood;
+  const snapshotBeverageDelivered = order.hasServedBeverage;
+  const snapshotCompleted = order.isFulfilled;
+  if (!snapshotCollected && !snapshotFoodDelivered && !snapshotBeverageDelivered && !snapshotCompleted) return state;
+
+  const base = state ?? emptyNormalAutoOrderState(buildNormalAutoOrderKey(order), now);
+  const collected = base.collected || snapshotCollected;
+  const foodDelivered = base.foodDelivered || snapshotFoodDelivered;
+  const beverageHandled = base.beverageHandled || snapshotBeverageDelivered;
+  const completed = base.completed || snapshotCompleted;
+  const prepared = base.prepared || collected || foodDelivered;
+  let step = base.step;
+  if (completed) {
+    step = 'done';
+  } else if (foodDelivered) {
+    step = preferences.autoNormalCompleteOrder ? 'complete-order' : 'done';
+  } else if (collected) {
+    step = preferences.autoNormalDeliverFood ? 'deliver-food' : 'wait-food-stored';
+  }
+
+  const madeProgress = prepared !== base.prepared
+    || collected !== base.collected
+    || foodDelivered !== base.foodDelivered
+    || beverageHandled !== base.beverageHandled
+    || completed !== base.completed
+    || step !== base.step;
+
+  return {
+    ...base,
+    prepared,
+    preparedAtMs: prepared && base.preparedAtMs <= 0 ? now : base.preparedAtMs,
+    beverageHandled,
+    beverageHandledAtMs: beverageHandled && base.beverageHandledAtMs <= 0 ? now : base.beverageHandledAtMs,
+    collected,
+    foodDelivered,
+    foodDeliveredAtMs: foodDelivered && base.foodDeliveredAtMs <= 0 ? now : base.foodDeliveredAtMs,
+    completed,
+    completedAtMs: completed && base.completedAtMs <= 0 ? now : base.completedAtMs,
+    step,
+    stepStartedAtMs: madeProgress ? now : base.stepStartedAtMs,
+    lastProgressAtMs: madeProgress ? now : base.lastProgressAtMs,
+    retryCount: madeProgress ? 0 : base.retryCount,
+    rollbackCount: madeProgress ? 0 : base.rollbackCount,
+    lastError: madeProgress ? '' : base.lastError,
+  };
+}
+
+export function shouldAttemptNormalCooking(
+  order: NormalBusinessOrder,
+  state: NormalAutoOrderState | undefined,
+  preferences: CompanionPreferences,
+  now: number,
+): boolean {
+  if (!preferences.autoNormalStartCooking) return false;
+  if (order.hasServedFood || order.foodId < 0) return false;
+  if (isNormalOrderCollected(order, state)) return false;
+  if (state?.paused && !isRecoverableNormalPausedState(state, now)) return false;
+  return !state?.prepared || isNormalOrderPreparedStale(state, now, preferences);
+}
+
+export function shouldAttemptNormalBeverage(
+  order: NormalBusinessOrder,
+  state: NormalAutoOrderState | undefined,
+  preferences: CompanionPreferences,
+  now: number,
+): boolean {
+  if (!preferences.autoNormalTakeBeverage) return false;
+  if (order.hasServedBeverage || order.beverageId < 0) return false;
+  if (state?.beverageHandled) return false;
+  if (state?.paused && !isRecoverableNormalPausedState(state, now)) return false;
+  return true;
+}
+
+export function shouldConfirmNormalCollection(
+  order: NormalBusinessOrder,
+  state: NormalAutoOrderState | undefined,
+  preferences: CompanionPreferences,
+  now: number,
+): boolean {
+  if (!preferences.autoNormalCollectCooking) return false;
+  if (order.hasServedFood || order.foodId < 0) return false;
+  if (!state) return false;
+  if (state.paused && !isRecoverableNormalPausedState(state, now)) return false;
+  if (isNormalOrderCollected(order, state)) {
+    return isAutomationTimestampStale(state.stepStartedAtMs, now, preferences.autoNormalStorageWaitSeconds * 1000);
+  }
+
+  if (!state.prepared) return false;
+  return isNormalOrderPreparedStale(state, now, preferences);
+}
+
+export function shouldAttemptNormalFoodDelivery(
+  order: NormalBusinessOrder,
+  state: NormalAutoOrderState | undefined,
+  preferences: CompanionPreferences,
+  now: number,
+): boolean {
+  if (!preferences.autoNormalDeliverFood) return false;
+  if (order.hasServedFood || order.foodId < 0) return false;
+  if (state?.foodDelivered) return false;
+  if (state?.paused && !isRecoverableNormalPausedState(state, now)) return false;
+  return isNormalOrderCollected(order, state);
+}
+
+export function shouldAttemptNormalCompletion(
+  order: NormalBusinessOrder,
+  state: NormalAutoOrderState | undefined,
+  preferences: CompanionPreferences,
+  now: number,
+): boolean {
+  if (!preferences.autoNormalCompleteOrder) return false;
+  if (order.isFulfilled || state?.completed) return false;
+  if (state?.paused && !isRecoverableNormalPausedState(state, now)) return false;
+  const hasFood = order.hasServedFood || state?.foodDelivered;
+  const hasBeverage = order.hasServedBeverage || state?.beverageHandled;
+  return Boolean(hasFood && hasBeverage);
+}
+
+export function reserveAutomationCookerSlot(
+  cycle: AutomationCookerCycle,
+  cooker: CookerRequirement | null,
+  label: string,
+  capacity: Map<string, number>,
+): CookerReservationResult {
+  if (!cooker) return { ok: true, message: '' };
+  const limit = getCookerSlotCapacity(cooker.key, capacity);
+  const used = cycle.used.get(cooker.key) ?? 0;
+  if (used >= limit) {
+    const owners = cycle.labels.get(cooker.key) ?? [];
+    return {
+      ok: false,
+      message: `等待厨具 ${cooker.label}：本轮可用容量 ${limit} 已预约${owners.length > 0 ? `（${owners.join('、')}）` : ''}。`,
+    };
+  }
+
+  cycle.used.set(cooker.key, used + 1);
+  cycle.labels.set(cooker.key, [...(cycle.labels.get(cooker.key) ?? []), label]);
+  return { ok: true, message: '' };
+}
+
+export function reserveRareCookerSlot(
+  cycle: AutomationCookerCycle,
+  cooker: CookerRequirement | null,
+  label: string,
+  capacity: Map<string, number>,
+  normalDemand: NormalCookerDemand,
+): CookerReservationResult {
+  if (!cooker) return { ok: true, message: '' };
+  const limit = getCookerSlotCapacity(cooker.key, capacity);
+  const used = cycle.used.get(cooker.key) ?? 0;
+  const normalReserved = normalDemand.counts.get(cooker.key) ?? 0;
+  if (normalReserved > 0 && used + normalReserved >= limit) {
+    const normalLabels = normalDemand.labels.get(cooker.key) ?? [];
+    return {
+      ok: false,
+      message: `等待厨具 ${cooker.label}：本轮优先给普客订单使用${normalLabels.length > 0 ? `（${normalLabels.join('、')}）` : ''}。`,
+    };
+  }
+
+  return reserveAutomationCookerSlot(cycle, cooker, label, capacity);
+}
+
+export function selectOrderPreparationCandidates(
+  recommendations: OrderRecommendation[],
+  favorites: FavoriteData,
+  preferences: CompanionPreferences,
+  limit: number,
+  states: ReadonlyMap<string, AutoFirstOrderState>,
+): { selections: ValidOrderPreparationSelection[]; messages: string[]; message: string } {
+  const rows = sortNightOrderRows(
+    recommendations.map((item) => ({ order: item.order, item })),
+    preferences.serviceOrderSortMode,
+  );
+  if (rows.length === 0) {
+    return { selections: [], messages: [], message: '暂无可准备的稀客订单。' };
+  }
+
+  const selections: ValidOrderPreparationSelection[] = [];
+  const messages: string[] = [];
+  for (const row of rows) {
+    const item = row.item;
+    const label = formatRareAutomationPrefix(item);
+    const state = states.get(buildAutoOrderKey(item));
+    const recipePick = pickRecipeForPreparation(item, favorites, preferences);
+    const beveragePick = pickBeverageForPreparation(item, favorites, preferences);
+    const recipeTarget = state?.recipeTarget ?? (recipePick.ok
+      ? buildRareRecipeTarget(item, recipePick.recipe, recipePick.favorite, recipePick.preferenceFallback)
+      : null);
+    const beverageTarget = state?.beverageTarget ?? (beveragePick.ok ? buildRareBeverageTarget(beveragePick.beverage, beveragePick.favorite) : null);
+
+    if (!recipeTarget && (preferences.autoPrepStartCooking || preferences.autoPrepFavoritesOnly)) {
+      messages.push(`${label}\n${preferences.autoPrepFavoritesOnly ? '没有匹配的收藏料理。' : '没有可用的推荐料理。'}`);
+      continue;
+    }
+    if (!beverageTarget && (preferences.autoPrepTakeBeverage || preferences.autoPrepFavoritesOnly)) {
+      messages.push(`${label}\n${preferences.autoPrepFavoritesOnly ? '没有匹配的收藏酒水。' : '没有可用的推荐酒水。'}`);
+      continue;
+    }
+
+    selections.push({
+      ok: true,
+      item,
+      recipe: recipePick.ok ? recipePick.recipe : null,
+      beverage: beveragePick.ok ? beveragePick.beverage : null,
+      recipeTarget,
+      beverageTarget,
+      recipeFavorite: recipePick.ok ? recipePick.favorite : null,
+      beverageFavorite: beveragePick.ok ? beveragePick.favorite : null,
+    });
+    if (selections.length >= limit) break;
+  }
+
+  return {
+    selections,
+    messages,
+    message: selections.length > 0 ? '' : messages[0] ?? '当前稀客订单没有可执行的自动化候选。',
+  };
+}
+
+export function lockRareAutomationTargets(
+  state: AutoFirstOrderState,
+  selection: ValidOrderPreparationSelection,
+): AutoFirstOrderState {
+  const recipeTarget = state.recipeTarget ?? selection.recipeTarget;
+  const beverageTarget = state.beverageTarget ?? selection.beverageTarget;
+  if (recipeTarget === state.recipeTarget && beverageTarget === state.beverageTarget) return state;
+
+  return {
+    ...state,
+    recipeTarget,
+    beverageTarget,
+  };
+}
+
+export function buildGameUiPinningTarget(
+  recommendations: OrderRecommendation[],
+  orderSortMode: ServiceOrderSortMode,
+  indexes: ReturnType<typeof buildRecommendationDataIndexes> = DEFAULT_DATA_INDEXES,
+): GameUiPinningTarget | null {
+  const item = sortNightOrderRows(
+    recommendations.map((recommendation) => ({ order: recommendation.order, recommendation })),
+    orderSortMode,
+  )[0]?.recommendation;
+  if (!item) return null;
+  const recipe = item.recipes[0] ?? null;
+  const beverage = item.beverages[0] ?? null;
+  if (!recipe && !beverage) return null;
+
+  const baseIngredientIds = recipe
+    ? recipe.recipe.ingredients
+      .map((name) => indexes.ingredientByName.get(name)?.id ?? -1)
+      .filter((id) => id >= 0)
+    : [];
+  const ingredientIds = normalizeIdList([
+    ...baseIngredientIds,
+    ...(recipe?.extraIngredients.map((ingredient) => ingredient.id) ?? []),
+  ]);
+  const recipeId = recipe?.recipe.id ?? -1;
+  const beverageId = beverage?.beverage.id ?? -1;
+  const cookerName = recipe?.recipe.cooker ?? '';
+  const cookerTypeId = resolveCookerTypeId(cookerName);
+
+  return {
+    signature: [
+      item.order.firstSeenAtUtc ?? item.order.lastSeenAtUtc ?? '',
+      item.order.deskCode,
+      item.order.guestId ?? item.order.guestName,
+      recipeId,
+      ingredientIds.join(','),
+      beverageId,
+      cookerTypeId,
+    ].join('|'),
+    recipeId,
+    recipeName: recipe?.recipe.name ?? '',
+    ingredientIds,
+    beverageId,
+    beverageName: beverage?.beverage.name ?? '',
+    cookerTypeId,
+    cookerName,
+  };
+}
+
+export function buildCompleteOrderPreferences(preferences: CompanionPreferences): CompanionPreferences {
+  return {
+    ...preferences,
+    autoPrepCompleteOrder: true,
+    autoPrepTakeBeverage: true,
+    autoPrepStartCooking: true,
+    autoPrepCollectCooking: true,
+  };
+}
+
+export function hasAutomationActionEnabled(preferences: CompanionPreferences): boolean {
+  return preferences.autoPrepCompleteOrder
+    || preferences.autoPrepTakeBeverage
+    || preferences.autoPrepStartCooking
+    || preferences.autoPrepCollectCooking;
+}
+
+export function hasNormalOrderActionEnabled(preferences: CompanionPreferences): boolean {
+  return preferences.autoNormalTakeBeverage
+    || preferences.autoNormalStartCooking
+    || preferences.autoNormalCollectCooking
+    || preferences.autoNormalDeliverFood
+    || preferences.autoNormalCompleteOrder;
+}
+
+export function buildAutoOrderKey(item: OrderRecommendation): string {
+  const order = item.order;
+  return [
+    order.firstSeenAtUtc ?? order.lastSeenAtUtc ?? '',
+    order.deskCode,
+    order.guestId ?? order.guestName,
+    order.foodTag,
+    order.beverageTag,
+  ].join('|');
+}
+
+export function buildNightBusinessOrderKey(order: NightBusinessOrder): string {
+  return [
+    order.firstSeenAtUtc ?? order.lastSeenAtUtc ?? '',
+    order.deskCode,
+    order.guestId ?? order.guestName,
+    order.foodTagId,
+    order.foodTag,
+    order.beverageTagId,
+    order.beverageTag,
+    order.source,
+  ].join('|');
+}
+
+export function formatRareAutomationPrefix(item: OrderRecommendation): string {
+  const order = item.order;
+  return `${order.guestName || '稀客'} · 桌 ${formatDesk(order.deskCode)}\n料理 ${order.foodTag || '无'} / 酒水 ${order.beverageTag || '无'}`;
+}
+
+export function buildRareAutoOrderDiagnostic(
+  selection: ValidOrderPreparationSelection,
+  state: AutoFirstOrderState,
+  now: number,
+  preferences: CompanionPreferences,
+): RareAutoOrderDiagnostic {
+  const order = selection.item.order;
+  return {
+    orderKey: buildAutoOrderKey(selection.item),
+    title: `${order.guestName || '稀客'} · 桌 ${formatDesk(order.deskCode)}`,
+    foodTag: order.foodTag || '',
+    beverageTag: order.beverageTag || '',
+    recipeName: formatRareAutomationRecipeName(state.recipeTarget, selection.recipeTarget, selection.recipe),
+    beverageName: state.beverageTarget?.beverageName ?? selection.beverageTarget?.beverageName ?? selection.beverage?.beverage.name ?? '',
+    stepLabel: getAutomationStepLabel(state.step),
+    stepSeconds: state.stepStartedAtMs > 0 ? Math.max(0, Math.round((now - state.stepStartedAtMs) / 1000)) : 0,
+    nextAction: getRareAutomationNextAction(state, now, preferences),
+    retryCount: state.retryCount,
+    rollbackCount: state.rollbackCount,
+    lastError: state.lastError,
+    prepared: state.prepared || Boolean(order.hasServedFood),
+    beverageHandled: state.beverageHandled || Boolean(order.hasServedBeverage),
+    hasServedFood: Boolean(order.hasServedFood),
+    hasServedBeverage: Boolean(order.hasServedBeverage),
+    paused: state.paused,
+  };
+}
+
+export function buildNormalAutoOrderDiagnostics(
+  orders: NormalBusinessOrder[],
+  states: Map<string, NormalAutoOrderState>,
+  now: number,
+  preferences: CompanionPreferences,
+): NormalAutoOrderDiagnostic[] {
+  return sortNormalOrders(orders)
+    .filter((order) => !order.isFulfilled)
+    .map((order) => {
+      const orderKey = buildNormalAutoOrderKey(order);
+      const state = states.get(orderKey) ?? emptyNormalAutoOrderState(orderKey, now);
+      return buildNormalAutoOrderDiagnostic(order, state, now, preferences);
+    });
+}
+
+export function buildNormalAutoOrderKey(order: NormalBusinessOrder): string {
+  if (order.orderKey) return order.orderKey;
+  return [
+    order.firstSeenAtUtc ?? '',
+    order.deskCode,
+    order.guestName,
+    order.foodId,
+    order.beverageId,
+  ].join('|');
+}
+
+export function buildNormalOrderAutomationSignature(orders: NormalBusinessOrder[]): string {
+  return sortNormalOrders(orders)
+    .map((order) => [
+      buildNormalAutoOrderKey(order),
+      order.isFulfilled ? 'fulfilled' : 'open',
+      order.hasServedFood ? 'food-served' : 'food-open',
+      order.hasServedBeverage ? 'bev-served' : 'bev-open',
+      order.hasStoredFoodReceipt ? 'stored-receipt' : 'stored-no-receipt',
+      order.hasStoredFood ? `stored:${order.storedFoodCount ?? 0}` : 'stored:0',
+      order.foodId,
+      order.beverageId,
+      order.deskCode,
+    ].join(':'))
+    .join('|');
+}
+
+export function isNormalOrderPreparedStale(
+  state: NormalAutoOrderState | undefined,
+  now: number,
+  preferences: CompanionPreferences,
+): boolean {
+  if (!state?.prepared || state.collected) return false;
+  if (state.paused && !isRecoverableNormalPausedState(state, now)) return false;
+  return state.preparedAtMs > 0 && now - state.preparedAtMs >= preferences.autoNormalStorageWaitSeconds * 1000;
+}
+
+export function isRecoverableNormalPausedState(state: NormalAutoOrderState | undefined, now: number): boolean {
+  if (!state?.paused) return false;
+  if (!state.lastError.includes('目标料理长时间未进入普客暂存容器')) return false;
+  return state.stepStartedAtMs <= 0 || now - state.stepStartedAtMs >= NORMAL_AUTO_RECOVERABLE_PAUSE_RETRY_MS;
+}
+
+export function syncRareStateWithOrderServedState(
+  state: AutoFirstOrderState,
+  order: NightBusinessOrder,
+  now: number,
+): AutoFirstOrderState {
+  if (!order.hasServedFood && !order.hasServedBeverage) return state;
+  return applyRareServedStateFromResponse(
+    state,
+    order,
+    {
+      ok: false,
+      prepared: false,
+      error: null,
+      order: {
+        deskCode: order.deskCode,
+        guestId: order.guestId,
+        guestName: order.guestName,
+        foodTag: order.foodTag,
+        beverageTag: order.beverageTag,
+      },
+      recipeId: -1,
+      recipeName: '',
+      beverageId: -1,
+      beverageName: '',
+      servedFood: order.hasServedFood,
+      servedBeverage: order.hasServedBeverage,
+      completedOrder: false,
+      steps: [],
+    },
+    now,
+  );
+}
+
+export function applyRareServedStateFromResponse(
+  state: AutoFirstOrderState,
+  order: NightBusinessOrder,
+  response: OrderPreparationResponse,
+  now: number,
+): AutoFirstOrderState {
+  const servedFood = Boolean(response.servedFood)
+    || Boolean(order.hasServedFood)
+    || didCompleteStep(response, '送达料理');
+  const servedBeverage = Boolean(response.servedBeverage)
+    || Boolean(order.hasServedBeverage)
+    || didCompleteStep(response, '送达酒水');
+  if (!servedFood && !servedBeverage) return state;
+
+  const nextPrepared = state.prepared || servedFood;
+  const nextBeverageHandled = state.beverageHandled || servedBeverage;
+  return {
+    ...state,
+    prepared: nextPrepared,
+    preparedAtMs: nextPrepared && !state.prepared ? now : state.preparedAtMs,
+    beverageHandled: nextBeverageHandled,
+    beverageHandledAtMs: nextBeverageHandled && !state.beverageHandled ? now : state.beverageHandledAtMs,
+    lastProgressAtMs: now,
+    step: servedFood && servedBeverage ? 'complete-order' : servedFood ? 'ensure-beverage' : 'wait-food-tray',
+    stepStartedAtMs: now,
+  };
+}
+
+export function formatOrderPreparationResponse(response: OrderPreparationResponse) {
+  const title = response.ok
+    ? `已处理：${response.order.guestName} · 桌 ${formatDesk(response.order.deskCode)}`
+    : `未完成：${response.order.guestName || '当前订单'} · 桌 ${formatDesk(response.order.deskCode)}`;
+  const target = [
+    response.recipeName ? `料理 ${response.recipeName}` : '',
+    response.beverageName ? `酒水 ${response.beverageName}` : '',
+  ].filter(Boolean).join(' / ');
+  const steps = response.steps.map((step) => {
+    const prefix = step.skipped ? '跳过' : step.ok ? '完成' : '失败';
+    return `${prefix} ${step.name}：${step.message}`;
+  });
+  return [title, target, ...steps, response.error ? `错误：${response.error}` : ''].filter(Boolean).join('\n');
+}
+
+function ensureCookerResourceRow(
+  rows: Map<string, AutomationCookerResourceRow>,
+  key: string,
+  label: string,
+  capacity: number,
+): AutomationCookerResourceRow {
+  const existing = rows.get(key);
+  if (existing) {
+    existing.capacity = Math.max(existing.capacity, capacity);
+    return existing;
+  }
+
+  const row: AutomationCookerResourceRow = {
+    key,
+    label,
+    capacity: Math.max(1, capacity),
+    normalReserved: 0,
+    rareReserved: 0,
+    labels: [],
+  };
+  rows.set(key, row);
+  return row;
+}
+
+function buildTrayResourceRows(diagnostics: RareAutoOrderDiagnostic[]): AutomationTrayResourceRow[] {
+  const foodLabels: string[] = [];
+  const beverageLabels: string[] = [];
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.paused) continue;
+    if (diagnostic.prepared && !diagnostic.hasServedFood) {
+      foodLabels.push(`${diagnostic.title} · ${diagnostic.recipeName || '料理'}`);
+    }
+
+    if (diagnostic.beverageHandled && !diagnostic.hasServedBeverage) {
+      beverageLabels.push(`${diagnostic.title} · ${diagnostic.beverageName || '酒水'}`);
+    }
+  }
+
+  return [
+    {
+      key: 'food',
+      label: '料理占用/待送',
+      count: foodLabels.length,
+      labels: foodLabels,
+    },
+    {
+      key: 'beverage',
+      label: '酒水占用/待送',
+      count: beverageLabels.length,
+      labels: beverageLabels,
+    },
+  ].filter((row) => row.count > 0);
+}
+
+function buildRareRecipeTarget(
+  item: OrderRecommendation,
+  recipe: IRareRecipeResult,
+  favorite: FavoriteRecipeEntry | null,
+  preferenceFallback = false,
+): RareAutomationRecipeTarget {
+  const acceptableFoodIds = uniqueNumbers([
+    recipe.recipe.id,
+    ...item.recipes.map((candidate) => candidate.recipe.id),
+  ]);
+  return {
+    recipeId: recipe.recipe.recipeId,
+    foodId: recipe.recipe.id,
+    recipeName: recipe.recipe.name,
+    cookerName: recipe.recipe.cooker,
+    extraIngredientIds: recipe.extraIngredients.map((ingredient) => ingredient.id),
+    acceptableFoodIds,
+    favorite: Boolean(favorite),
+    preferenceFallback,
+  };
+}
+
+function buildRareBeverageTarget(
+  beverage: IRareBeverageResult,
+  favorite: FavoriteBeverageEntry | null,
+): RareAutomationBeverageTarget {
+  return {
+    beverageId: beverage.beverage.id,
+    beverageName: beverage.beverage.name,
+    favorite: Boolean(favorite),
+  };
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return [...new Set(values.filter((value) => Number.isFinite(value) && value >= 0))];
+}
+
+function formatRareAutomationRecipeName(
+  stateTarget: RareAutomationRecipeTarget | null,
+  selectionTarget: RareAutomationRecipeTarget | null,
+  selectedRecipe: IRareRecipeResult | null,
+): string {
+  const target = stateTarget ?? selectionTarget;
+  const name = target?.recipeName ?? selectedRecipe?.recipe.name ?? '';
+  if (!name) return '';
+  return target?.preferenceFallback ? `${name}（喜好备选）` : name;
+}
+
+function buildNormalAutoOrderDiagnostic(
+  order: NormalBusinessOrder,
+  state: NormalAutoOrderState,
+  now: number,
+  preferences: CompanionPreferences,
+): NormalAutoOrderDiagnostic {
+  return {
+    orderKey: buildNormalAutoOrderKey(order),
+    title: `桌 ${formatDesk(order.deskCode)} · ${order.foodName || `#${order.foodId}`}`,
+    foodName: order.foodName || `#${order.foodId}`,
+    beverageName: order.beverageName || `#${order.beverageId}`,
+    source: order.source || '',
+    stepLabel: getAutomationStepLabel(state.step),
+    stepSeconds: state.stepStartedAtMs > 0 ? Math.max(0, Math.round((now - state.stepStartedAtMs) / 1000)) : 0,
+    nextAction: getNormalAutomationNextAction(state, now, preferences),
+    retryCount: state.retryCount,
+    rollbackCount: state.rollbackCount,
+    lastError: state.lastError,
+    prepared: state.prepared || isNormalOrderCollected(order, state),
+    beverageHandled: state.beverageHandled || order.hasServedBeverage,
+    collected: isNormalOrderCollected(order, state),
+    storedFoodCount: order.storedFoodCount ?? 0,
+    hasStoredFoodReceipt: Boolean(order.hasStoredFoodReceipt),
+    storedFoodStatus: order.storedFoodStatus ?? '',
+    foodDelivered: state.foodDelivered || order.hasServedFood,
+    completed: state.completed || order.isFulfilled,
+    paused: state.paused,
+    hasServedFood: order.hasServedFood,
+    hasServedBeverage: order.hasServedBeverage,
+  };
+}
+
+function getRareAutomationNextAction(
+  state: AutoFirstOrderState,
+  now: number,
+  preferences: CompanionPreferences,
+): string {
+  if (state.paused) return '等待手动重试或订单变化';
+  if (state.prepared && state.step === 'wait-food-tray') {
+    return formatRemainingAction(state.preparedAtMs, now, preferences.autoRareTrayWaitSeconds * 1000, '料理回退检查');
+  }
+  if (state.step === 'complete-order') return '下一轮尝试完成订单';
+  if (state.step === 'ensure-beverage') return '下一轮校验取酒';
+  if (state.step === 'ensure-cooking') return '下一轮校验厨具/开锅';
+  if (state.step === 'match-order') return '下一轮匹配订单';
+  if (state.step === 'done') return '等待订单从列表移除';
+  return '下一轮刷新';
+}
+
+function getNormalAutomationNextAction(
+  state: NormalAutoOrderState,
+  now: number,
+  preferences: CompanionPreferences,
+): string {
+  if (state.paused) {
+    if (isRecoverableNormalPausedState(state, now)) return '下一轮自动恢复';
+    if (state.lastError.includes('目标料理长时间未进入普客暂存容器')) {
+      return formatRemainingAction(state.stepStartedAtMs, now, NORMAL_AUTO_RECOVERABLE_PAUSE_RETRY_MS, '自动恢复');
+    }
+    return '等待订单变化或手动处理';
+  }
+  if (state.completed || state.step === 'done') return '等待订单从列表移除';
+  if (state.step === 'complete-order') return '下一轮尝试完成订单';
+  if (state.step === 'deliver-food') return '下一轮尝试送达料理';
+  if (state.step === 'ensure-beverage') return '下一轮校验酒水';
+  if (state.collected) {
+    if (preferences.autoNormalDeliverFood && !state.foodDelivered) return '下一轮尝试送达料理';
+    return formatRemainingAction(state.stepStartedAtMs, now, preferences.autoNormalStorageWaitSeconds * 1000, '保温箱复查');
+  }
+  if (state.prepared) {
+    return formatRemainingAction(state.preparedAtMs, now, preferences.autoNormalStorageWaitSeconds * 1000, '保温箱复查');
+  }
+  if (state.step === 'ensure-cooking') return '下一轮校验厨具/开锅';
+  if (state.step === 'wait-food-stored') return '下一轮确认保温箱';
+  if (state.step === 'match-order') return '下一轮匹配订单';
+  return '下一轮刷新';
+}
+
+function formatRemainingAction(startedAtMs: number, now: number, timeoutMs: number, label: string): string {
+  if (startedAtMs <= 0) return `${label}等待中`;
+  const remainingMs = timeoutMs - (now - startedAtMs);
+  if (remainingMs <= 0) return `下一轮${label}`;
+  return `${label}约 ${Math.ceil(remainingMs / 1000)} 秒`;
+}
+
+function pickRecipeForPreparation(
+  item: OrderRecommendation,
+  favorites: FavoriteData,
+  preferences: CompanionPreferences,
+) {
+  if (!preferences.autoPrepStartCooking && !preferences.autoPrepFavoritesOnly) {
+    return { ok: false as const };
+  }
+
+  for (const recipe of item.recipes) {
+    const favorite = findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe);
+    if (preferences.autoPrepFavoritesOnly && !favorite) continue;
+    return { ok: true as const, recipe, favorite, preferenceFallback: false };
+  }
+
+  if (item.recipes.length === 0) {
+    for (const recipe of item.preferenceRecipes) {
+      const favorite = findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe);
+      if (preferences.autoPrepFavoritesOnly && !favorite) continue;
+      return { ok: true as const, recipe, favorite, preferenceFallback: true };
+    }
+  }
+
+  return { ok: false as const };
+}
+
+function pickBeverageForPreparation(
+  item: OrderRecommendation,
+  favorites: FavoriteData,
+  preferences: CompanionPreferences,
+) {
+  if (!preferences.autoPrepTakeBeverage && !preferences.autoPrepFavoritesOnly) {
+    return { ok: false as const };
+  }
+
+  for (const beverage of item.beverages) {
+    const favorite = findBeverageFavorite(favorites, item.customer.id, item.order.beverageTag, beverage);
+    if (preferences.autoPrepFavoritesOnly && !favorite) continue;
+    return { ok: true as const, beverage, favorite };
+  }
+
+  return { ok: false as const };
+}
