@@ -45,6 +45,7 @@ const SHOW_DEBUG_DETAILS_STORAGE_KEY = `${STORAGE_PREFIX}-show-debug-details`;
 const SERVICE_ORDER_SORT_MODE_STORAGE_KEY = `${STORAGE_PREFIX}-service-order-sort-mode`;
 const RECOMMENDATION_SORT_PROFILE_STORAGE_KEY = `${STORAGE_PREFIX}-recommendation-sort-profile`;
 const RECOMMENDATION_BUDGET_POLICY_STORAGE_KEY = `${STORAGE_PREFIX}-recommendation-budget-policy`;
+const RECIPE_VARIANT_LIMIT_PER_BASE_STORAGE_KEY = `${STORAGE_PREFIX}-recipe-variant-limit-per-base`;
 const EXCLUDED_INGREDIENT_IDS_STORAGE_KEY = `${STORAGE_PREFIX}-excluded-ingredient-ids`;
 const EXCLUDED_BEVERAGE_IDS_STORAGE_KEY = `${STORAGE_PREFIX}-excluded-beverage-ids`;
 
@@ -72,6 +73,9 @@ export const MAX_AUTO_STEP_RETRIES_LIMIT = 10;
 export const DEFAULT_AUTO_ROLLBACKS = 2;
 export const MIN_AUTO_ROLLBACKS = 0;
 export const MAX_AUTO_ROLLBACKS_LIMIT = 5;
+export const DEFAULT_RECIPE_VARIANT_LIMIT_PER_BASE = 1;
+export const MIN_RECIPE_VARIANT_LIMIT_PER_BASE = 1;
+export const MAX_RECIPE_VARIANT_LIMIT_PER_BASE = 8;
 export const DEFAULT_RECOMMENDATION_EXCLUSIONS: RecommendationExclusions = {
   excludedIngredientIds: [],
   excludedBeverageIds: [],
@@ -116,6 +120,7 @@ export interface CompanionPreferences {
   serviceOrderSortMode: ServiceOrderSortMode;
   recommendationSortProfile: RecommendationSortProfile;
   recommendationBudgetPolicy: RecommendationBudgetPolicy;
+  recipeVariantLimitPerBase: number;
   recommendationExclusions: RecommendationExclusions;
 }
 
@@ -171,6 +176,10 @@ export function readStoredCompanionPreferences(): CompanionPreferences {
     serviceOrderSortMode: readStoredServiceOrderSortMode(),
     recommendationSortProfile: readStoredRecommendationSortProfile(),
     recommendationBudgetPolicy: readStoredRecommendationBudgetPolicy(),
+    recipeVariantLimitPerBase: readStoredNumber(
+      RECIPE_VARIANT_LIMIT_PER_BASE_STORAGE_KEY,
+      DEFAULT_RECIPE_VARIANT_LIMIT_PER_BASE,
+    ),
     recommendationExclusions: readStoredRecommendationExclusions(),
   });
 }
@@ -216,6 +225,7 @@ export function normalizeCompanionPreferences(
     serviceOrderSortMode: value.serviceOrderSortMode === 'guest' ? 'guest' : 'ordered',
     recommendationSortProfile: normalizeRecommendationSortProfile(value.recommendationSortProfile),
     recommendationBudgetPolicy: normalizeRecommendationBudgetPolicy(value.recommendationBudgetPolicy),
+    recipeVariantLimitPerBase: normalizeRecipeVariantLimitPerBase(value.recipeVariantLimitPerBase),
     recommendationExclusions: normalizeRecommendationExclusions(value.recommendationExclusions),
   };
 }
@@ -256,6 +266,15 @@ export function normalizeAutoStepRetries(value: number) {
 
 export function normalizeAutoRollbacks(value: number) {
   return clampInteger(value, MIN_AUTO_ROLLBACKS, MAX_AUTO_ROLLBACKS_LIMIT, DEFAULT_AUTO_ROLLBACKS);
+}
+
+export function normalizeRecipeVariantLimitPerBase(value: number | undefined) {
+  return clampInteger(
+    value ?? DEFAULT_RECIPE_VARIANT_LIMIT_PER_BASE,
+    MIN_RECIPE_VARIANT_LIMIT_PER_BASE,
+    MAX_RECIPE_VARIANT_LIMIT_PER_BASE,
+    DEFAULT_RECIPE_VARIANT_LIMIT_PER_BASE,
+  );
 }
 
 export function persistCompanionPreferences(preferences: CompanionPreferences) {
@@ -299,6 +318,7 @@ export function persistCompanionPreferences(preferences: CompanionPreferences) {
     serializeRecommendationSortProfile(normalized.recommendationSortProfile),
   );
   localStorage.setItem(RECOMMENDATION_BUDGET_POLICY_STORAGE_KEY, normalized.recommendationBudgetPolicy);
+  localStorage.setItem(RECIPE_VARIANT_LIMIT_PER_BASE_STORAGE_KEY, String(normalized.recipeVariantLimitPerBase));
   localStorage.setItem(
     EXCLUDED_INGREDIENT_IDS_STORAGE_KEY,
     JSON.stringify(normalized.recommendationExclusions.excludedIngredientIds),

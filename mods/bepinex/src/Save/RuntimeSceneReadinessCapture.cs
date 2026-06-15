@@ -72,7 +72,6 @@ internal static class RuntimeSceneReadinessCapture
             var missing = new List<string>();
 
             PatchMethod(_harmony, DaySceneSustainedPanelTypeName, "OnPannelPostOpen", 0, nameof(OnDaySceneReady), patchedNow, missing);
-            PatchMethod(_harmony, DaySceneSustainedPanelTypeName, "OnPanelClosed", 0, nameof(OnDaySceneClosed), patchedNow, missing);
             PatchMethod(_harmony, DaySceneSustainedPanelTypeName, "OnPrePanelDestroyed", 0, nameof(OnDaySceneDestroyed), patchedNow, missing);
             PatchMethod(_harmony, IzakayaConfigPanelTypeName, "OnPanelOpen", 1, nameof(OnIzakayaPrepReady), patchedNow, missing);
             PatchMethod(_harmony, IzakayaConfigPanelTypeName, "GoToSpecific", 1, nameof(OnIzakayaPrepSpecificReady), patchedNow, missing);
@@ -156,14 +155,6 @@ internal static class RuntimeSceneReadinessCapture
         lock (SyncRoot)
         {
             SetReadyLocked(dayReady: true, prepReady: false, "DaySceneSustainedPannel.OnPannelPostOpen");
-        }
-    }
-
-    private static void OnDaySceneClosed()
-    {
-        lock (SyncRoot)
-        {
-            SetReadyLocked(dayReady: false, prepReady: _izakayaPrepReady, "DaySceneSustainedPannel.OnPanelClosed");
         }
     }
 

@@ -789,11 +789,11 @@ internal sealed class StewardOverlayController
             };
         }
 
-        if (!IsDayScenePanelReady())
+        if (!CanReadDaySceneTaskRuntime(out var daySceneWaitReason))
         {
             return new RuntimeMissionContext
             {
-                Source = "任务数据等待日间 UI 初始化完成。",
+                Source = daySceneWaitReason,
             };
         }
 
@@ -821,6 +821,48 @@ internal sealed class StewardOverlayController
         if (!IsDaySceneRuntimeScene(_activeSceneName)) return false;
         if (ShouldBlockDaySceneRuntimeReads(_activeSceneName)) return false;
         return IsDayScenePanelReady();
+    }
+
+    private bool CanReadDaySceneTaskRuntime(out string reason)
+    {
+        reason = "";
+        if (!HasRuntimeBasicsLoaded())
+        {
+            reason = "游戏运行时数据尚未读取完成，请稍后再试。";
+            return false;
+        }
+
+        if (IsNonGameplayScene(_activeSceneName))
+        {
+            reason = "当前未进入存档，无法读取日间任务和可邀请稀客。";
+            return false;
+        }
+
+        if (ShouldBlockDaySceneRuntimeReads(_activeSceneName))
+        {
+            reason = "经营准备界面正在初始化，暂不读取日间任务和可邀请稀客。";
+            return false;
+        }
+
+        if (IsNightBusinessScene(_activeSceneName))
+        {
+            reason = "当前处于夜间经营，日间任务和稀客邀请只支持日间场景。";
+            return false;
+        }
+
+        if (!IsDaySceneRuntimeScene(_activeSceneName))
+        {
+            reason = "当前不在日间场景，无法读取日间任务和可邀请稀客。";
+            return false;
+        }
+
+        if (!IsDayScenePanelReady())
+        {
+            reason = "日间场景 UI 正在初始化，暂不读取日间任务和可邀请稀客。";
+            return false;
+        }
+
+        return true;
     }
 
     private bool HasRuntimeBasicsLoaded()
@@ -1274,44 +1316,7 @@ internal sealed class StewardOverlayController
 
     private bool CanRunRareGuestInvitationAction(out string reason)
     {
-        reason = "";
-        if (!HasRuntimeBasicsLoaded())
-        {
-            reason = "游戏运行时数据尚未读取完成，请稍后再试。";
-            return false;
-        }
-
-        if (IsNonGameplayScene(_activeSceneName))
-        {
-            reason = "当前未进入存档，无法读取可邀请稀客。";
-            return false;
-        }
-
-        if (ShouldBlockDaySceneRuntimeReads(_activeSceneName))
-        {
-            reason = "经营准备界面正在初始化，暂不读取可邀请稀客。";
-            return false;
-        }
-
-        if (IsNightBusinessScene(_activeSceneName))
-        {
-            reason = "当前处于夜间经营，稀客邀请只支持日间场景。";
-            return false;
-        }
-
-        if (!IsDaySceneRuntimeScene(_activeSceneName))
-        {
-            reason = "当前不在日间场景，无法读取可邀请稀客。";
-            return false;
-        }
-
-        if (!IsDayScenePanelReady())
-        {
-            reason = "日间场景正在初始化，请稍后再试。";
-            return false;
-        }
-
-        return true;
+        return CanReadDaySceneTaskRuntime(out reason);
     }
 
     private void ProcessPendingCookingCollections()
@@ -1701,8 +1706,8 @@ internal sealed class StewardOverlayController
         if (!IsDaySceneRuntimeScene(sceneName))
         {
             reason = L(
-                "等待日间场景 UI 初始化完成；暂不读取游戏运行态。",
-                "Waiting for day-scene UI initialization before reading live runtime state.");
+                "等待日间场景运行态初始化完成；暂不读取游戏运行态。",
+                "Waiting for day-scene runtime data before reading live runtime state.");
             return false;
         }
 
@@ -1717,7 +1722,7 @@ internal sealed class StewardOverlayController
         return true;
     }
 
-    private bool IsDayScenePanelReady()
+    private static bool IsDayScenePanelReady()
     {
         return RuntimeSceneReadinessCapture.DaySceneReady && IsDayScenePanelActive();
     }

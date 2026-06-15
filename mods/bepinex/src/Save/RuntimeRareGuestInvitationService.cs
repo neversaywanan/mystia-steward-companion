@@ -25,6 +25,7 @@ internal sealed class RareGuestInvitationResult
     public string CurrentMapName { get; set; } = "";
     public List<RareGuestInvitationEntry> Candidates { get; set; } = new();
     public List<RareGuestInvitationEntry> Available { get; set; } = new();
+    public List<RareGuestInvitationEntry> ExistingInvited { get; set; } = new();
     public List<RareGuestInvitationEntry> Invited { get; set; } = new();
     public List<RareGuestInvitationEntry> Skipped { get; set; } = new();
 }
@@ -301,7 +302,10 @@ internal static class RuntimeRareGuestInvitationService
         if (HasNpcInvited(statusTracker, candidate.Id))
         {
             result.ExistingControlledCount++;
-            AddUnavailableCandidate(result, candidate, "invited", "今晚已邀请", level);
+            var existingInvitedEntry = BuildEntry(candidate, "invited", false, "今晚已邀请", level);
+            result.Candidates.Add(existingInvitedEntry);
+            result.ExistingInvited.Add(existingInvitedEntry);
+            result.Skipped.Add(existingInvitedEntry);
             return;
         }
 
@@ -505,13 +509,18 @@ internal static class RuntimeRareGuestInvitationService
 
     private static string ReadCurrentMapLabel(Type? sceneManagerType)
     {
-        if (sceneManagerType == null) return "";
-        var sceneManager = RuntimeReflectionUtility.GetSingletonInstance(sceneManagerType)
-            ?? GetGenericSingletonInstance(sceneManagerType)
-            ?? RuntimeReflectionUtility.FindUnityObject(sceneManagerType);
+        var sceneManager = ResolveSceneManager(sceneManagerType);
         var current = RuntimeReflectionUtility.GetMemberValue(sceneManager, "CurrentActiveMapLabel")?.ToString()
             ?? RuntimeReflectionUtility.GetMemberValue(sceneManager, "TargetMapLabel")?.ToString();
         return string.IsNullOrWhiteSpace(current) ? "" : current.Trim();
+    }
+
+    private static object? ResolveSceneManager(Type? sceneManagerType)
+    {
+        if (sceneManagerType == null) return null;
+        return RuntimeReflectionUtility.GetSingletonInstance(sceneManagerType)
+            ?? GetGenericSingletonInstance(sceneManagerType)
+            ?? RuntimeReflectionUtility.FindUnityObject(sceneManagerType);
     }
 
     private static InviteCandidateRecord CreateRecord(

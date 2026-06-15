@@ -112,9 +112,9 @@ export function buildOrderRecommendations(
       cached = {
         customer,
         plans,
-        recipes: deriveRecipeRowsFromPlans(plans, true),
+        recipes: deriveRecipeRowsFromPlans(plans, true, preferences.recipeVariantLimitPerBase),
         beverages: deriveBeverageRowsFromPlans(plans, true),
-        preferenceRecipes: deriveRecipeRowsFromPlans(plans, false),
+        preferenceRecipes: deriveRecipeRowsFromPlans(plans, false, preferences.recipeVariantLimitPerBase),
         preferenceBeverages: deriveBeverageRowsFromPlans(plans, false),
       };
       cache.set(cacheKey, cached);
@@ -332,9 +332,11 @@ export function buildRecommendationRuntimeContext(
 export function deriveRecipeRowsFromPlans(
   plans: RareOrderRecommendationPlan[],
   requireOrderTag: boolean,
+  variantLimitPerBase = Number.POSITIVE_INFINITY,
 ): IRareRecipeResult[] {
   const rows: IRareRecipeResult[] = [];
   const seen = new Set<string>();
+  const baseRecipeCounts = new Map<number, number>();
   for (const plan of plans) {
     if (!plan.food) continue;
     if (plan.bucket === 'blocked') continue;
@@ -342,7 +344,10 @@ export function deriveRecipeRowsFromPlans(
     const row = toRareRecipeResult(plan.food);
     const key = recipeResultKey(row);
     if (seen.has(key)) continue;
+    const currentBaseCount = baseRecipeCounts.get(row.recipe.id) ?? 0;
+    if (currentBaseCount >= variantLimitPerBase) continue;
     seen.add(key);
+    baseRecipeCounts.set(row.recipe.id, currentBaseCount + 1);
     rows.push(row);
   }
   return rows;
@@ -365,7 +370,7 @@ export function deriveBeverageRowsFromPlans(
   return rows;
 }
 
-function toRareRecipeResult(food: FoodCandidate): IRareRecipeResult {
+export function toRareRecipeResult(food: FoodCandidate): IRareRecipeResult {
   return {
     recipe: food.recipe,
     extraIngredients: food.extraIngredients,
@@ -416,6 +421,7 @@ function buildRecommendationStateSignature(runtime: RecommendationStateSnapshot,
     preferences.prioritizeMissionRecipes ? 'missionRecipe:1' : 'missionRecipe:0',
     `planSort:${serializeRecommendationSortProfile(preferences.recommendationSortProfile)}`,
     `budgetPolicy:${preferences.recommendationBudgetPolicy}`,
+    `recipeVariantLimit:${preferences.recipeVariantLimitPerBase}`,
     `exclusions:${serializeRecommendationExclusions(preferences.recommendationExclusions.excludedIngredientIds, preferences.recommendationExclusions.excludedBeverageIds)}`,
     placedCookers,
   ].join('|');

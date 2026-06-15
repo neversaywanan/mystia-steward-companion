@@ -21,6 +21,7 @@ import {
   findRecipeFavorite,
   normalizeIdList,
 } from '@/companion/domain/favorites';
+import { toRareRecipeResult } from '@/companion/domain/service-recommendations';
 import {
   sortNightOrderRows,
   sortNormalOrders,
@@ -911,7 +912,10 @@ function pickPlanForPreparation(
 
   for (const plan of item.plans) {
     if (plan.bucket === 'blocked') continue;
-    const recipe = plan.food ? findRecipeRowForPlan(item, plan.food.recipe.id, plan.food.extraIngredients.map((ingredient) => ingredient.id)) : null;
+    const recipe = plan.food
+      ? findRecipeRowForPlan(item, plan.food.recipe.id, plan.food.extraIngredients.map((ingredient) => ingredient.id))
+        ?? toRareRecipeResult(plan.food)
+      : null;
     const beverage = plan.beverage ? findBeverageRowForPlan(item, plan.beverage.beverage.id) : null;
     const recipeFavorite = recipe ? findRecipeFavorite(favorites, item.customer.id, item.order.foodTag, recipe) : null;
     const beverageFavorite = beverage ? findBeverageFavorite(favorites, item.customer.id, item.order.beverageTag, beverage) : null;

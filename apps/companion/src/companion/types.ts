@@ -317,6 +317,7 @@ export interface RareGuestInvitationResponse {
   currentMapName?: string;
   candidates?: RareGuestInvitationEntry[];
   available: RareGuestInvitationEntry[];
+  existingInvited: RareGuestInvitationEntry[];
   invited: RareGuestInvitationEntry[];
   skipped: RareGuestInvitationEntry[];
 }

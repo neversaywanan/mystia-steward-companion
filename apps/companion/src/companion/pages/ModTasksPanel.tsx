@@ -49,6 +49,16 @@ function RareGuestInvitationPanel({
     .slice()
     .sort(compareInvitationEntries);
   const filteredAvailableEntries = availableEntries.filter((entry) => matchesInvitationKizunaLevels(entry, inviteLevels));
+  const currentInvitedEntries = inviteAllResult
+    ? deduplicateInvitationEntries([
+      ...(inviteAllResult.existingInvited ?? []),
+      ...inviteAllResult.invited,
+      ...sourceEntries.filter((entry) => entry.status === 'invited'),
+    ])
+      .filter((entry) => matchesInvitationKizunaLevels(entry, inviteLevels))
+      .sort(compareInvitationEntries)
+    : [];
+  const skippedEntries = inviteAllResult?.skipped.filter((entry) => entry.status !== 'invited') ?? [];
   const isBusy = inviteBusyKey !== '';
   const isListBusy = inviteBusyKey === 'list';
   const isAllBusy = inviteBusyKey === 'all';
@@ -172,21 +182,24 @@ function RareGuestInvitationPanel({
                 <EmptyRow text={isListBusy ? '正在读取稀客候选' : inviteScope === 'all' ? '暂无稀客候选' : '当前场景暂无稀客候选'} />
               )}
             </div>
-            {inviteAllResult.invited.length > 0 && (
-              <div className="mt-2 flex max-w-full flex-wrap gap-1">
-                {inviteAllResult.invited.slice(0, 12).map((entry) => (
-                  <Badge key={`${entry.id}-${entry.runtimeName || entry.name}`} variant="secondary" className="max-w-full truncate">
-                    {entry.name || entry.runtimeName || `#${entry.id}`}
-                  </Badge>
-                ))}
-                {inviteAllResult.invited.length > 12 && (
-                  <Badge variant="outline">+{inviteAllResult.invited.length - 12}</Badge>
-                )}
+            {currentInvitedEntries.length > 0 && (
+              <div className="mt-2 max-w-full">
+                <div className="mb-1 text-xs text-muted-foreground">当前已邀请</div>
+                <div className="flex flex-wrap gap-1">
+                  {currentInvitedEntries.slice(0, 12).map((entry) => (
+                    <Badge key={`${entry.id}-${entry.runtimeName || entry.name}`} variant="secondary" className="max-w-full truncate">
+                      {entry.name || entry.runtimeName || `#${entry.id}`}
+                    </Badge>
+                  ))}
+                  {currentInvitedEntries.length > 12 && (
+                    <Badge variant="outline">+{currentInvitedEntries.length - 12}</Badge>
+                  )}
+                </div>
               </div>
             )}
-            {inviteAllResult.skipped.length > 0 && (
+            {skippedEntries.length > 0 && (
               <div className="mt-2 max-w-full break-words text-xs text-muted-foreground">
-                跳过：{summarizeInvitationSkipped(inviteAllResult.skipped)}
+                跳过：{summarizeInvitationSkipped(skippedEntries)}
               </div>
             )}
           </div>
@@ -392,6 +405,17 @@ function compareInvitationEntries(left: RareGuestInvitationEntry, right: RareGue
     right.name || right.runtimeName || `#${right.id}`,
     'zh-Hans-CN',
   );
+}
+
+function deduplicateInvitationEntries(entries: RareGuestInvitationEntry[]): RareGuestInvitationEntry[] {
+  const byKey = new Map<string, RareGuestInvitationEntry>();
+  for (const entry of entries) {
+    const key = entry.id >= 0
+      ? `id:${entry.id}`
+      : `name:${entry.runtimeName || entry.name}`;
+    if (!byKey.has(key)) byKey.set(key, entry);
+  }
+  return Array.from(byKey.values());
 }
 
 function normalizeInvitationKizunaLevel(entry: RareGuestInvitationEntry): number {

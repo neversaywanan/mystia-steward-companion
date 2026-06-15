@@ -133,9 +133,9 @@ export function ModRarePanel({
 
   const recipes = useMemo(() => {
     if (!selectedCustomer || !foodTag) return [];
-    return deriveRecipeRowsFromPlans(plans, true)
+    return deriveRecipeRowsFromPlans(plans, true, preferences.recipeVariantLimitPerBase)
       .slice(0, MAX_RECOMMENDATION_ROWS);
-  }, [foodTag, plans, selectedCustomer]);
+  }, [foodTag, plans, preferences.recipeVariantLimitPerBase, selectedCustomer]);
 
   const beverages = useMemo(() => {
     if (!selectedCustomer || !beverageTag) return [];

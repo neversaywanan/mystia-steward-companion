@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IconRefresh } from '@tabler/icons-react';
-import { Button, InfoLine, ListPanel, MultiSelectBox, Slider, SwitchField, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui-kit';
+import { Button, InfoLine, ListPanel, MultiSelectBox, NumberInput, Slider, SwitchField, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui-kit';
 import { readLogSettings, writeLogSettings } from '@/companion/api';
 import {
+  MAX_RECIPE_VARIANT_LIMIT_PER_BASE,
   MAX_AUTO_ROLLBACKS_LIMIT,
   MAX_AUTO_STEP_RETRIES_LIMIT,
   MAX_AUTO_WAIT_SECONDS,
   MAX_NORMAL_AUTO_ORDER_CONCURRENCY,
   MAX_RARE_AUTO_ORDER_CONCURRENCY,
+  MIN_RECIPE_VARIANT_LIMIT_PER_BASE,
   MIN_AUTO_ORDER_CONCURRENCY,
   MIN_AUTO_ROLLBACKS,
   MIN_AUTO_STEP_RETRIES,
   MIN_AUTO_WAIT_SECONDS,
+  normalizeRecipeVariantLimitPerBase,
   type CompanionPreferences,
 } from '@/companion/preferences';
 import type { LocalApiLogSettings, SettingsTab } from '@/companion/types';
@@ -309,6 +312,21 @@ export function ModSettingsPanel({
                 ]}
                 onChange={(recommendationBudgetPolicy) => onPreferenceChange({ recommendationBudgetPolicy })}
               />
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 text-muted-foreground">同基础料理显示</span>
+                <NumberInput
+                  min={MIN_RECIPE_VARIANT_LIMIT_PER_BASE}
+                  max={MAX_RECIPE_VARIANT_LIMIT_PER_BASE}
+                  value={preferences.recipeVariantLimitPerBase}
+                  onValueChange={(recipeVariantLimitPerBase) => onPreferenceChange({
+                    recipeVariantLimitPerBase: normalizeRecipeVariantLimitPerBase(recipeVariantLimitPerBase),
+                  })}
+                  className="h-8 w-16"
+                />
+              </label>
+              <div className="text-xs text-muted-foreground">
+                同一道基础料理只保留当前排序最靠前的指定数量，加料不同但排序靠后的变体会隐藏。
+              </div>
               <div className="space-y-2">
                 <div className="text-sm font-medium">排除材料</div>
                 <MultiSelectBox
