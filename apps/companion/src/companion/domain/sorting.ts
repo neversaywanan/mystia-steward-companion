@@ -1,6 +1,5 @@
 import type { ServiceOrderSortMode } from '@/companion/preferences';
 import type { NightBusinessOrder, NormalBusinessOrder } from '@/companion/types';
-import type { INormalBeverageResult, INormalRecipeResult } from '@/lib/types';
 
 export function sortNightOrders(
   orders: NightBusinessOrder[],
@@ -20,18 +19,6 @@ export function sortNightOrderRows<T extends { order: NightBusinessOrder }>(
 
 export function sortNormalOrders(orders: NormalBusinessOrder[]): NormalBusinessOrder[] {
   return [...orders].sort(compareNormalOrdersByTime);
-}
-
-export function compareNormalRecipesForMod(a: INormalRecipeResult, b: INormalRecipeResult) {
-  if (a.totalCoverage !== b.totalCoverage) return b.totalCoverage - a.totalCoverage;
-  if (a.ingredientCost !== b.ingredientCost) return b.ingredientCost - a.ingredientCost;
-  return a.recipe.id - b.recipe.id;
-}
-
-export function compareNormalBeveragesForMod(a: INormalBeverageResult, b: INormalBeverageResult) {
-  if (a.totalCoverage !== b.totalCoverage) return b.totalCoverage - a.totalCoverage;
-  if (a.beverage.price !== b.beverage.price) return b.beverage.price - a.beverage.price;
-  return a.beverage.id - b.beverage.id;
 }
 
 function compareNormalOrdersByTime(left: NormalBusinessOrder, right: NormalBusinessOrder): number {

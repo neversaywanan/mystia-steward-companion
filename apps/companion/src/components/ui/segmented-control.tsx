@@ -1,7 +1,7 @@
 import { SegmentedControl as MantineSegmentedControl } from '@mantine/core';
 import type { SegmentedControlProps as MantineSegmentedControlProps } from '@mantine/core';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type SegmentedControlOption<TValue extends string> = {
   value: TValue;
@@ -32,7 +32,7 @@ function SegmentedControl<TValue extends string>({
       color="steward"
       size="sm"
       radius="md"
-      className={cn('steward-segmented-control', className)}
+      className={composeClassNames('steward-segmented-control', className)}
       onChange={(nextValue) => onValueChange(nextValue as TValue)}
       {...props}
     />

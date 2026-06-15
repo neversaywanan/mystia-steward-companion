@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Card as MantineCard } from '@mantine/core';
 
-import { cn } from "@/lib/utils"
+import { composeClassNames } from '@/components/ui/style';
 
 function Card({
   className,
@@ -15,7 +15,7 @@ function Card({
       withBorder
       radius="md"
       padding={size === 'sm' ? 'sm' : 'md'}
-      className={cn('steward-card group/card flex flex-col gap-4 overflow-hidden text-sm data-[size=sm]:gap-3', className)}
+      className={composeClassNames('steward-card group/card flex flex-col gap-4 overflow-hidden text-sm data-[size=sm]:gap-3', className)}
       {...props}
     />
   )
@@ -25,7 +25,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-header"
-      className={cn(
+      className={composeClassNames(
         "group/card-header @container/card-header grid auto-rows-min items-start gap-1 has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-4 group-data-[size=sm]/card:[.border-b]:pb-3",
         className
       )}
@@ -38,7 +38,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn(
+      className={composeClassNames(
         "text-base leading-snug font-semibold group-data-[size=sm]/card:text-sm",
         className
       )}
@@ -51,7 +51,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={composeClassNames("text-sm text-muted-foreground", className)}
       {...props}
     />
   )
@@ -61,7 +61,7 @@ function CardAction({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-action"
-      className={cn(
+      className={composeClassNames(
         "col-start-2 row-span-2 row-start-1 self-start justify-self-end",
         className
       )}
@@ -74,7 +74,7 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-content"
-      className={cn(className)}
+      className={composeClassNames(className)}
       {...props}
     />
   )
@@ -84,7 +84,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-footer"
-      className={cn(
+      className={composeClassNames(
         "flex items-center border-t steward-muted-surface-45 pt-3 group-data-[size=sm]/card:pt-2",
         className
       )}

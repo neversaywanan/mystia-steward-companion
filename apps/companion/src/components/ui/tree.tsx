@@ -5,14 +5,14 @@ import type {
   TreeProps as MantineTreeProps,
 } from '@mantine/core';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 function Tree({ className, levelOffset = 'md', ...props }: MantineTreeProps) {
   return (
     <MantineTree
       data-slot="tree"
       levelOffset={levelOffset}
-      className={cn('steward-tree', className)}
+      className={composeClassNames('steward-tree', className)}
       {...props}
     />
   );

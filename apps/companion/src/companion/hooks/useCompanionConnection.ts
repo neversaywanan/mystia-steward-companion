@@ -12,6 +12,9 @@ import { isTauriRuntime } from '@/lib/tauri-runtime';
 import type { RuntimeDataCatalogSnapshot } from '@/lib/recommendation-data';
 
 export const CONNECTION_RETRY_DELAYS_MS = [2000, 5000, 10000, 30000];
+const INITIAL_PROBE_TIMEOUT_MS = 700;
+const AUTO_POLL_TIMEOUT_MS = 1800;
+const MANUAL_REFRESH_TIMEOUT_MS = 2800;
 
 export function useCompanionConnection(snapshotRefreshIntervalMs: number) {
   const [endpoint, setEndpoint] = useState(readStoredEndpoint);
@@ -20,16 +23,20 @@ export function useCompanionConnection(snapshotRefreshIntervalMs: number) {
   const [snapshot, setSnapshot] = useState<LocalApiSnapshot | null>(null);
   const [cachedRuntimeData, setCachedRuntimeData] = useState<RuntimeDataCatalogSnapshot | null>(null);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [connectionProbing, setConnectionProbing] = useState(false);
   const [connectionPaused, setConnectionPaused] = useState(false);
   const [connectionFailureCount, setConnectionFailureCount] = useState(0);
   const [lastConnectedAt, setLastConnectedAt] = useState<Date | null>(null);
-  const refreshInFlightRef = useRef(false);
+  const latestRequestIdRef = useRef(0);
+  const inFlightRequestIdRef = useRef<number | null>(null);
 
   const normalizedEndpoint = useMemo(() => normalizeEndpoint(endpoint), [endpoint]);
   const normalizedEndpointDraft = useMemo(() => normalizeEndpoint(endpointDraft), [endpointDraft]);
 
   const applyEndpointConnection = useCallback(() => {
+    latestRequestIdRef.current += 1;
+    inFlightRequestIdRef.current = null;
     setEndpoint(normalizedEndpointDraft);
     setEndpointDraft(normalizedEndpointDraft);
     setConnectionPaused(false);
@@ -37,42 +44,69 @@ export function useCompanionConnection(snapshotRefreshIntervalMs: number) {
     setError('');
     setSnapshot(null);
     setCachedRuntimeData(null);
+    setManualRefreshing(false);
+    setConnectionProbing(false);
   }, [normalizedEndpointDraft]);
 
   const pauseConnection = useCallback(() => {
+    latestRequestIdRef.current += 1;
+    inFlightRequestIdRef.current = null;
     setConnectionPaused(true);
-    setLoading(false);
+    setManualRefreshing(false);
+    setConnectionProbing(false);
     setError('已停止自动重连。');
   }, []);
 
   const refresh = useCallback(async (manual = false) => {
     if (!apiToken) {
       setError('未收到本地 API Token。请从游戏内启动或按 F8 唤起伴随窗口。');
-      setLoading(false);
+      setManualRefreshing(false);
+      setConnectionProbing(false);
       return;
     }
     if (!manual && connectionPaused) return;
-    if (refreshInFlightRef.current) return;
-    refreshInFlightRef.current = true;
-    const showLoading = manual || !snapshot;
-    if (showLoading) setLoading(true);
+    if (inFlightRequestIdRef.current !== null && !manual) return;
+
+    const requestId = latestRequestIdRef.current + 1;
+    latestRequestIdRef.current = requestId;
+    inFlightRequestIdRef.current = requestId;
+    const timeoutMs = manual
+      ? MANUAL_REFRESH_TIMEOUT_MS
+      : snapshot
+        ? AUTO_POLL_TIMEOUT_MS
+        : INITIAL_PROBE_TIMEOUT_MS;
+    if (manual) {
+      setManualRefreshing(true);
+    } else if (!snapshot) {
+      setConnectionProbing(true);
+    }
     const abortController = new AbortController();
-    const timeoutId = window.setTimeout(() => abortController.abort(), 2800);
+    const timeoutId = window.setTimeout(() => abortController.abort(), timeoutMs);
 
     try {
-      const data = await readSnapshot(normalizedEndpoint, apiToken, abortController.signal);
+      const data = await readSnapshot(normalizedEndpoint, apiToken, {
+        signal: abortController.signal,
+        timeoutMs,
+      });
+      if (latestRequestIdRef.current !== requestId) return;
       setSnapshot(data);
       setError('');
       setConnectionPaused(false);
       setConnectionFailureCount(0);
       setLastConnectedAt(new Date());
     } catch (err) {
+      if (latestRequestIdRef.current !== requestId) return;
       setError(err instanceof Error ? err.message : String(err));
       setConnectionFailureCount((current) => Math.min(current + 1, CONNECTION_RETRY_DELAYS_MS.length));
     } finally {
       window.clearTimeout(timeoutId);
-      refreshInFlightRef.current = false;
-      if (showLoading) setLoading(false);
+      if (inFlightRequestIdRef.current === requestId) {
+        inFlightRequestIdRef.current = null;
+      }
+      if (latestRequestIdRef.current === requestId) {
+        if (manual) setManualRefreshing(false);
+        if (!manual && !snapshot) setConnectionProbing(false);
+      }
     }
   }, [apiToken, connectionPaused, normalizedEndpoint, snapshot]);
 
@@ -154,7 +188,8 @@ export function useCompanionConnection(snapshotRefreshIntervalMs: number) {
     snapshot,
     cachedRuntimeData,
     error,
-    loading,
+    loading: manualRefreshing,
+    connectionProbing,
     connectionPaused,
     connectionFailureCount,
     lastConnectedAt,

@@ -1,15 +1,25 @@
 import { isTauriRuntime } from '@/lib/tauri-runtime';
 
+interface LocalApiRequestOptions {
+  signal?: AbortSignal;
+  tauriTimeoutMs?: number;
+}
+
 export async function readLocalApiJson<T>(
   endpoint: string,
   apiToken: string,
   path: string,
-  signal?: AbortSignal,
+  options?: AbortSignal | LocalApiRequestOptions,
 ): Promise<T> {
   const targetEndpoint = `${endpoint}${path}`;
+  const requestOptions = normalizeRequestOptions(options);
   if (isTauriRuntime()) {
     const { invoke } = await import('@tauri-apps/api/core');
-    const payload = await invoke<string>('fetch_snapshot', { endpoint: targetEndpoint, token: apiToken });
+    const payload = await invoke<string>('fetch_snapshot', {
+      endpoint: targetEndpoint,
+      token: apiToken,
+      timeoutMs: requestOptions.tauriTimeoutMs,
+    });
     return JSON.parse(payload) as T;
   }
 
@@ -18,7 +28,7 @@ export async function readLocalApiJson<T>(
   const response = await fetch(targetEndpoint, {
     cache: 'no-store',
     headers,
-    signal,
+    signal: requestOptions.signal,
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -35,8 +45,17 @@ export async function readLocalApiJsonWithTimeout<T>(
   const timeoutId = window.setTimeout(() => abortController.abort(), timeoutMs);
 
   try {
-    return await readLocalApiJson<T>(endpoint, apiToken, path, abortController.signal);
+    return await readLocalApiJson<T>(endpoint, apiToken, path, {
+      signal: abortController.signal,
+      tauriTimeoutMs: timeoutMs,
+    });
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
+
+function normalizeRequestOptions(options: AbortSignal | LocalApiRequestOptions | undefined): LocalApiRequestOptions {
+  if (!options) return {};
+  if (options instanceof AbortSignal) return { signal: options };
+  return options;
 }

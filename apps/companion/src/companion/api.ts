@@ -31,15 +31,21 @@ import {
   type RecommendationDataSet,
 } from '@/lib/recommendation-data';
 import type {
-  ICustomerRare,
-  IRareBeverageResult,
-  IRareRecipeResult,
-} from '@/lib/types';
+  RareCustomerCatalogItem,
+} from '@/lib/catalog-types';
+import type { RareBeverageRecommendation, RareRecipeRecommendation } from '@/recommendation-engine';
 
 const RARE_TRAY_BACKLOG_REUSE_SECONDS = 30;
 
-export async function readSnapshot(endpoint: string, apiToken: string, signal: AbortSignal): Promise<LocalApiSnapshot> {
-  return readLocalApiJson<LocalApiSnapshot>(endpoint, apiToken, '/snapshot', signal);
+export async function readSnapshot(
+  endpoint: string,
+  apiToken: string,
+  options: { signal: AbortSignal; timeoutMs: number },
+): Promise<LocalApiSnapshot> {
+  return readLocalApiJson<LocalApiSnapshot>(endpoint, apiToken, '/snapshot', {
+    signal: options.signal,
+    tauriTimeoutMs: options.timeoutMs,
+  });
 }
 
 export async function readLogs(endpoint: string, apiToken: string, signal: AbortSignal): Promise<LocalApiLogs> {
@@ -281,9 +287,9 @@ export async function readFavorites(endpoint: string, apiToken: string, signal: 
 export async function addRecipeFavorite(
   endpoint: string,
   apiToken: string,
-  customer: ICustomerRare,
+  customer: RareCustomerCatalogItem,
   foodTag: string,
-  recipe: IRareRecipeResult,
+  recipe: RareRecipeRecommendation,
 ): Promise<FavoriteMutationResponse> {
   const params = new URLSearchParams({
     customerId: String(customer.id),
@@ -307,9 +313,9 @@ export async function removeRecipeFavorite(
 export async function addBeverageFavorite(
   endpoint: string,
   apiToken: string,
-  customer: ICustomerRare,
+  customer: RareCustomerCatalogItem,
   beverageTag: string,
-  beverage: IRareBeverageResult,
+  beverage: RareBeverageRecommendation,
 ): Promise<FavoriteMutationResponse> {
   const params = new URLSearchParams({
     customerId: String(customer.id),

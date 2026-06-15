@@ -10,7 +10,8 @@ import {
   buildRecommendationDataIndexes,
   type RecommendationDataSet,
 } from '@/lib/recommendation-data';
-import type { IRecipe, IRareRecipeResult } from '@/lib/types';
+import type { RecipeCatalogItem } from '@/lib/catalog-types';
+import type { RareRecipeRecommendation } from '@/recommendation-engine';
 
 const COOKER_TYPE_NAME_BY_ID = new Map<number, string>([
   [1, '煮锅'],
@@ -107,7 +108,7 @@ export function getNormalCookerRequirement(
   return getRecipeCookerRequirement(recipe);
 }
 
-export function getRecipeCookerRequirement(recipe: IRecipe | null | undefined): CookerRequirement | null {
+export function getRecipeCookerRequirement(recipe: RecipeCatalogItem | null | undefined): CookerRequirement | null {
   const key = normalizeCookerName(recipe?.cooker);
   if (!key) return null;
   return {
@@ -119,7 +120,7 @@ export function getRecipeCookerRequirement(recipe: IRecipe | null | undefined): 
 export function getNormalOrderRecipe(
   order: NormalBusinessOrder,
   data: RecommendationDataSet = DEFAULT_RECOMMENDATION_DATA,
-): IRecipe | null {
+): RecipeCatalogItem | null {
   const indexes = buildRecommendationDataIndexes(data);
   return indexes.recipeByFoodId.get(order.foodId)
     ?? data.recipes.find((item) => item.recipeId === order.foodId)
@@ -127,7 +128,7 @@ export function getNormalOrderRecipe(
 }
 
 export function shouldKeepRecipeForCooker(
-  recipe: IRareRecipeResult,
+  recipe: RareRecipeRecommendation,
   runtimeSets: RuntimeSets | null,
   filterMissingCookers: boolean,
 ): boolean {

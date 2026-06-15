@@ -2,7 +2,7 @@ import { Badge as MantineBadge } from '@mantine/core';
 import type { BadgeProps as MantineBadgeProps } from '@mantine/core';
 import type { HTMLAttributes } from 'react';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost' | 'link';
 
@@ -23,7 +23,7 @@ function Badge({ className, variant = 'default', ...props }: BadgeProps) {
       variant={mantineVariant}
       radius="md"
       size="sm"
-      className={cn('steward-badge', className)}
+      className={composeClassNames('steward-badge', className)}
       {...(props as MantineBadgeProps)}
     />
   );

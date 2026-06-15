@@ -1,12 +1,17 @@
 import type { RecommendationDataSet } from '@/lib/recommendation-data';
-import type { ICustomerRare, IIngredient, IRecipe } from '@/lib/types';
+import type { RareCustomerCatalogItem, IngredientCatalogItem, RecipeCatalogItem } from '@/lib/catalog-types';
 import {
   normalizeRecommendationSortProfile,
   type RecommendationObjectiveKey,
   type RecommendationPlanSortContext,
   type RecommendationSortProfile,
 } from '@/recommendation-engine/sort-profile';
-import { hasForbiddenIngredientTag, resolveFoodTags, resolveTagPriority } from '@/recommendation-engine/tags';
+import {
+  findTagsThatCanSuppress,
+  hasForbiddenIngredientTag,
+  resolveFoodTags,
+  resolveTagPriority,
+} from '@/recommendation-engine/tag-resolution';
 import type {
   BeverageCandidate,
   ConditionResult,
@@ -25,7 +30,7 @@ const LOW_STOCK_THRESHOLD = 5;
 
 interface BuildRareOrderPlansOptions {
   data: RecommendationDataSet;
-  customer: ICustomerRare;
+  customer: RareCustomerCatalogItem;
   requiredFoodTag: string;
   requiredBeverageTag: string;
   context: RecommendationRuntimeContext;
@@ -40,7 +45,7 @@ interface BuildRareOrderPlansFromCandidatesOptions extends BuildRareOrderPlansOp
 }
 
 interface IngredientSearchState {
-  ingredients: IIngredient[];
+  ingredients: IngredientCatalogItem[];
   activeTags: string[];
   suppressedTags: string[];
   matchedPositiveTags: string[];
@@ -138,7 +143,7 @@ export function buildRareFoodCandidates(
   const usableIngredients = [...context.availableIngredientIds]
     .filter((id) => !isIngredientExcluded(id, context))
     .map((id) => ingredientsById.get(id))
-    .filter((ingredient): ingredient is IIngredient => Boolean(ingredient));
+    .filter((ingredient): ingredient is IngredientCatalogItem => Boolean(ingredient));
 
   const candidates: FoodCandidate[] = [];
   for (const recipe of data.recipes) {
@@ -160,6 +165,7 @@ export function buildRareFoodCandidates(
       baseState,
       demand,
       baseIngredientIds,
+      tagPriorityRules: context.tagPriorityRules,
     });
     const bestStates = searchIngredientStates({
       recipe,
@@ -187,7 +193,7 @@ export function buildRareBeverageCandidates(
   for (const beverage of data.beverages) {
     if (!context.availableBeverageIds.has(beverage.id)) continue;
     if (context.excludedBeverageIds.has(beverage.id)) continue;
-    const resolved = resolveTagPriority(beverage.tags, []);
+    const resolved = resolveTagPriority(beverage.tags, context.tagPriorityRules);
     const matchedTags = resolved.activeTags.filter((tag) => demand.customer.beverageTags.includes(tag));
     const meetsRequiredBeverage = resolved.activeTags.includes(demand.requiredBeverageTag);
     const conditionResults: ConditionResult[] = [
@@ -320,8 +326,8 @@ function resolvePlanBucket(
 }
 
 function hasAvailableBaseIngredients(
-  recipe: IRecipe,
-  ingredientsByName: Map<string, IIngredient>,
+  recipe: RecipeCatalogItem,
+  ingredientsByName: Map<string, IngredientCatalogItem>,
   context: RecommendationRuntimeContext,
 ): boolean {
   return recipe.ingredients.every((name) => {
@@ -336,7 +342,7 @@ function isIngredientExcluded(id: number, context: RecommendationRuntimeContext)
   return context.disabledIngredientIds.has(id) || context.excludedIngredientIds.has(id);
 }
 
-function isCookerAvailable(recipe: IRecipe, context: RecommendationRuntimeContext): boolean {
+function isCookerAvailable(recipe: RecipeCatalogItem, context: RecommendationRuntimeContext): boolean {
   if (!context.hasCookerSnapshot) return true;
   return context.placedCookerNames.has(recipe.cooker);
 }
@@ -347,17 +353,19 @@ function buildRelevantIngredientPool({
   baseState,
   demand,
   baseIngredientIds,
+  tagPriorityRules,
 }: {
-  recipe: IRecipe;
-  usableIngredients: IIngredient[];
+  recipe: RecipeCatalogItem;
+  usableIngredients: IngredientCatalogItem[];
   baseState: IngredientSearchState;
   demand: RareTagOrderDemand;
   baseIngredientIds: Set<number>;
-}): IIngredient[] {
+  tagPriorityRules: RecommendationRuntimeContext['tagPriorityRules'];
+}): IngredientCatalogItem[] {
   const usefulTags = new Set([
     demand.requiredFoodTag,
     ...demand.customer.positiveTags,
-    ...findTagsThatSuppressNegatives(baseState.activeTags, demand.customer.negativeTags),
+    ...findTagsThatCanSuppress(baseState.activeTags, demand.customer.negativeTags, tagPriorityRules),
   ]);
 
   return usableIngredients
@@ -375,9 +383,9 @@ function searchIngredientStates({
   demand,
   context,
 }: {
-  recipe: IRecipe;
+  recipe: RecipeCatalogItem;
   baseState: IngredientSearchState;
-  ingredientPool: IIngredient[];
+  ingredientPool: IngredientCatalogItem[];
   extraSlots: number;
   demand: RareTagOrderDemand;
   context: RecommendationRuntimeContext;
@@ -405,8 +413,8 @@ function searchIngredientStates({
 }
 
 function evaluateIngredientState(
-  recipe: IRecipe,
-  extraIngredients: IIngredient[],
+  recipe: RecipeCatalogItem,
+  extraIngredients: IngredientCatalogItem[],
   demand: RareTagOrderDemand,
   context: RecommendationRuntimeContext,
 ): IngredientSearchState {
@@ -433,11 +441,11 @@ function evaluateIngredientState(
 }
 
 function buildFoodCandidate(
-  recipe: IRecipe,
+  recipe: RecipeCatalogItem,
   state: IngredientSearchState,
   demand: RareTagOrderDemand,
   context: RecommendationRuntimeContext,
-  ingredientsByName: Map<string, IIngredient>,
+  ingredientsByName: Map<string, IngredientCatalogItem>,
 ): FoodCandidate {
   const baseCost = recipe.ingredients.reduce((sum, name) => {
     const ingredient = ingredientsByName.get(name);
@@ -464,7 +472,7 @@ function buildFoodCandidate(
 }
 
 function buildFoodConditionResults(
-  recipe: IRecipe,
+  recipe: RecipeCatalogItem,
   state: IngredientSearchState,
   demand: RareTagOrderDemand,
   cookerAvailable: boolean,
@@ -646,7 +654,7 @@ function buildMissingBeverageConditions(
 }
 
 function buildExtraIngredientReasons(
-  extraIngredients: IIngredient[],
+  extraIngredients: IngredientCatalogItem[],
   demand: RareTagOrderDemand,
 ): Record<number, string[]> {
   const result: Record<number, string[]> = {};
@@ -658,21 +666,8 @@ function buildExtraIngredientReasons(
   return result;
 }
 
-function findTagsThatSuppressNegatives(activeTags: string[], negativeTags: string[]): string[] {
-  const pairs: Array<[string, string]> = [
-    ['肉', '素'],
-    ['重油', '清淡'],
-    ['饱腹', '下酒'],
-    ['大份', '小巧'],
-    ['灼热', '凉爽'],
-  ];
-  return pairs
-    .filter(([, weak]) => activeTags.includes(weak) && negativeTags.includes(weak))
-    .map(([strong]) => strong);
-}
-
 function calculateResourcePressure(
-  ingredients: IIngredient[],
+  ingredients: IngredientCatalogItem[],
   ownedIngredientQty: Record<number, number>,
 ): number {
   return ingredients.reduce((sum, ingredient) => {

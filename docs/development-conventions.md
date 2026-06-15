@@ -6,7 +6,7 @@
 
 - 仓库维护 BepInEx Mod 与 Tauri 伴随窗口。
 - 伴随窗口入口为 `apps/companion/src/companion/ModWorkbench.tsx`，顶层挂载在 `apps/companion/src/App.tsx`。
-- 推荐算法集中在 `apps/companion/src/lib/normal-recommend.ts`、`apps/companion/src/lib/rare-recommend.ts` 和 `apps/companion/src/lib/tags.ts`。
+- 推荐算法核心集中在 `apps/companion/src/recommendation-engine/`；经营中订单推荐由 `apps/companion/src/companion/domain/service-recommendations.ts` 组装，并通过 `apps/companion/src/companion/workers/order-recommendations.worker.ts` 放到 worker 中计算。普客准备推荐使用 `apps/companion/src/recommendation-engine/normal-coverage.ts` 和运行时数据索引。
 - 推荐、库存名称、任务目标和自动化目标使用 Mod 从游戏运行时读取并通过本地 API 发布的结构化数据；运行时数据未就绪时，伴随窗口显示等待状态。
 - C# Mod 不引用 TypeScript 模块；前端和 Mod 的共享数据通过本地 API 的运行时快照传递。新增稀客事件变体时，优先确认游戏运行时映射和别名归一化逻辑。
 
@@ -72,11 +72,12 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1
 - 夜间经营订单优先使用运行时对象；日志捕获仅作为兼容和排障手段。
 - 夜间经营订单必须按首次出现时间稳定显示；不得因桌号排序或推荐完整度排序让新订单插到旧订单前面。
 - 经营中订单排序支持 `点单顺序` 和 `稀客分组`。默认必须保持点单顺序；稀客分组模式下，同一稀客订单放在一起，稀客组之间按该稀客最早订单出现时间排序，组内仍按点单先后排序。经营中列表、当前点单推荐、专注模式、游戏界面置顶目标和自动化第一单选择必须复用同一排序函数。
-- 稀客/经营中主推荐必须先满足点单料理 Tag 和酒水 Tag；不满足点单的 fallback 只能作为明确标注的“喜好备选”，不得进入收藏置顶、自动化或一键订单使用的正式推荐数组。唯一例外是用户开启 `优先任务料理` 时，当前稀客已接取的经营投喂任务指定料理可被提升到正式推荐第一位，但仍必须通过解锁、库存和缺失厨具过滤。料理推荐优先 `foodScore >= 3`，但必须保留“满足点单且低于 3 分”的候选作为正式兜底。
+- 稀客/经营中主推荐必须先满足点单料理 Tag 和酒水 Tag；不满足点单的 fallback 只能作为明确标注的“喜好备选”，不得进入收藏置顶、自动化或一键订单使用的正式推荐数组。当前稀客已接取的经营投喂任务指定料理可通过推荐权重中的 `优先任务料理` 排序项提升，但仍必须通过解锁、库存和缺失厨具过滤。料理推荐优先 `foodScore >= 3`，但必须保留“满足点单且低于 3 分”的候选作为正式兜底。
 - 稀客页场景候选必须优先使用运行时数据集；当 `/snapshot.recommendationState.availableRareCustomerIds` 非空时，候选还要按当前存档已记录/解锁稀客过滤。该集合为空表示暂未读取到进度，前端不得因此把候选列表清空。
 - 经营中读取到已摆放厨具快照时，`排除缺失厨具` 可过滤当前场景没有对应厨具的料理；读不到快照或无法映射厨具名时不得误删推荐。料理厨具类型以游戏 `CookSystemManager` 的 `AllAvailableCookerType` 为准，前端只消费本地 API 给出的中文厨具名。设置页的 `同基础料理显示` 控制同一基础料理在稀客页和经营中推荐中最多展示多少个加料变体；该限制只裁剪 UI 展示行，自动化选单必须继续基于完整推荐 plan 构造目标，不能因为 UI 隐藏某个变体而跳过可执行方案。
 - `游戏界面置顶推荐` 和 `目标厨具高亮` 是两个独立开关。两者可以共享当前第一笔稀客订单的推荐目标，但本地 API 必须分别传递 `enabled` 与 `highlightEnabled`，C# 侧也要分别控制列表置顶补丁和厨具高亮服务。
-- 稀客料理/酒水展示排序由伴随窗口设置页的排序规则控制，默认保持：料理 `满足点单 Tag -> foodScore -> 加料种类数 -> 资源压力 -> 料理售价 -> 加料成本 -> 料理 ID`，酒水 `满足点单 Tag -> bevScore -> 酒水售价 -> 酒水 ID`。新增排序项时必须同时接入稀客页、经营中页、专注模式、缓存签名和自动化当前第一单选择，不要让不同入口出现不同排序。
+- 稀客料理/酒水展示排序由伴随窗口设置页的推荐权重控制。满足点单 Tag 是正式推荐的硬前提；之后由 `RecommendationSortProfile` 的启用项、权重、方向和预设共同决定顺序，默认均衡预设综合任务料理、收藏、稀客偏好、厌恶风险、加料数量、资源压力、成本、利润、酒水库存和当前厨具可做。新增排序项时必须同时接入稀客页、经营中页、专注模式、缓存签名和自动化当前第一单选择，不要让不同入口出现不同排序。
+- 推荐 tag 解析统一维护在 `apps/companion/src/recommendation-engine/tag-resolution.ts`，动态料理 tag 维护在 `dynamic-food-tags.ts`。运行时导出的 `tagPriorityRules` 优先级最高；运行时缺失时只允许使用 `PROJECT_VERIFIED_TAG_PRIORITY_RULES` 这组项目验证规则，不得在其他模块重新硬编码互斥/压制关系。新增或调整 tag 规则必须来自游戏运行时行为、反编译资料或可复现实测，并同步更新该集中模块和相关文档。
 - 已捕获且仍能匹配当前稀客的订单不得使用短时间缓存过期清理；只应在明确移除、确认上菜完成、稀客离场或长时间硬上限后消失。
 - 本地 API 监听 `127.0.0.1`，避免代理工具干扰 `localhost`；除 `/health` 外，接口必须通过伴随窗口传入的 token 访问。
 - 伴随窗口单实例控制监听 `127.0.0.1:32146`；热键逻辑必须先发送 `show`/`toggle`/`exit` 控制消息，控制端口不可达时才启动伴随进程，避免手柄快捷键重复创建窗口。

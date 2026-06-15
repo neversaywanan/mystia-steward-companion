@@ -1,13 +1,16 @@
 import { useMemo } from 'react';
-import { TagBadge } from '@/components/TagBadge';
+import { TagPillGroup } from '@/components/recommendation/TagPillGroup';
 import { EmptyRow, EmptyState, ListPanel } from '@/components/ui-kit';
-import { compareNormalBeveragesForMod, compareNormalRecipesForMod } from '@/companion/domain/sorting';
 import type { RecommendationStateSnapshot, RuntimeSets } from '@/companion/types';
 import { NormalBeverageRow, NormalRecipeRow, PlaceToolbar, RuntimeUnavailable } from '@/companion/pages/shared';
 import { DENSE_ITEM_GRID, DENSE_TWO_COLUMN_GRID, MAX_RECOMMENDATION_ROWS, RECOMMENDATION_SCROLL_AREA } from '@/companion/pages/shared-constants';
-import { computeNormalBeverageResults, computeNormalRecipeResults, getNormalCustomersByPlace } from '@/lib/normal-recommend';
 import { buildRecommendationDataIndexes, type RecommendationDataSet } from '@/lib/recommendation-data';
-import type { TPlace } from '@/lib/types';
+import type { PlaceName } from '@/lib/catalog-types';
+import {
+  buildNormalBeverageRecommendations,
+  buildNormalFoodRecommendations,
+  getNormalCustomersByPlace,
+} from '@/recommendation-engine';
 
 export function ModNormalPanel({
   runtime,
@@ -20,37 +23,49 @@ export function ModNormalPanel({
 }: {
   runtime: RecommendationStateSnapshot | null;
   runtimeSets: RuntimeSets | null;
-  selectedPlace: TPlace | null;
-  detectedPlace: TPlace | null;
+  selectedPlace: PlaceName | null;
+  detectedPlace: PlaceName | null;
   data: RecommendationDataSet;
-  onPlaceChange: (place: TPlace) => void;
+  onPlaceChange: (place: PlaceName) => void;
   onFollowDetectedPlace: () => void;
 }) {
   const dataIndexes = useMemo(() => buildRecommendationDataIndexes(data), [data]);
   const recipes = useMemo(() => {
     if (!runtime || !runtimeSets || !selectedPlace) return [];
-    return computeNormalRecipeResults(
-      selectedPlace,
-      runtimeSets.recipeIds,
-      runtimeSets.unavailableIngredientIds,
-      runtime.popularFoodTag,
-      runtime.popularHateFoodTag,
-      runtime.famousShopEnabled,
+    return buildNormalFoodRecommendations({
       data,
-    )
-      .sort(compareNormalRecipesForMod)
-      .slice(0, MAX_RECOMMENDATION_ROWS);
+      place: selectedPlace,
+      context: {
+        availableRecipeIds: runtimeSets.recipeIds,
+        availableBeverageIds: runtimeSets.beverageIds,
+        disabledIngredientIds: runtimeSets.unavailableIngredientIds,
+        popularFoodTag: runtime.popularFoodTag,
+        popularHateFoodTag: runtime.popularHateFoodTag,
+        famousShopEnabled: runtime.famousShopEnabled,
+        tagPriorityRules: data.tagPriorityRules,
+      },
+    }).slice(0, MAX_RECOMMENDATION_ROWS);
   }, [data, runtime, runtimeSets, selectedPlace]);
 
   const beverages = useMemo(() => {
     if (!runtimeSets || !selectedPlace) return [];
-    return computeNormalBeverageResults(selectedPlace, runtimeSets.beverageIds, data)
-      .sort(compareNormalBeveragesForMod)
-      .slice(0, MAX_RECOMMENDATION_ROWS);
-  }, [data, runtimeSets, selectedPlace]);
+    return buildNormalBeverageRecommendations({
+      data,
+      place: selectedPlace,
+      context: {
+        availableRecipeIds: runtimeSets.recipeIds,
+        availableBeverageIds: runtimeSets.beverageIds,
+        disabledIngredientIds: runtimeSets.unavailableIngredientIds,
+        popularFoodTag: runtime?.popularFoodTag ?? null,
+        popularHateFoodTag: runtime?.popularHateFoodTag ?? null,
+        famousShopEnabled: runtime?.famousShopEnabled ?? false,
+        tagPriorityRules: data.tagPriorityRules,
+      },
+    }).slice(0, MAX_RECOMMENDATION_ROWS);
+  }, [data, runtime, runtimeSets, selectedPlace]);
 
   const customers = useMemo(
-    () => (selectedPlace ? getNormalCustomersByPlace(selectedPlace, data) : []),
+    () => (selectedPlace ? getNormalCustomersByPlace(data, selectedPlace) : []),
     [data, selectedPlace],
   );
 
@@ -106,9 +121,9 @@ export function ModNormalPanel({
             {customers.map((customer) => (
               <div key={customer.id} className="rounded-md border border-border/80 p-2 text-sm">
                 <div className="font-medium">{customer.name}</div>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {customer.positiveTags.map((tag) => <TagBadge key={tag} tag={tag} variant="preferred" />)}
-                  {customer.beverageTags.map((tag) => <TagBadge key={tag} tag={tag} variant="default" />)}
+                <div className="mt-1 space-y-1">
+                  <TagPillGroup tags={customer.positiveTags} tone="positive" />
+                  <TagPillGroup tags={customer.beverageTags} />
                 </div>
               </div>
             ))}

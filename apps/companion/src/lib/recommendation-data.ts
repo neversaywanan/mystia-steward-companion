@@ -1,21 +1,21 @@
 import type {
-  IBeverage,
-  ICustomerNormal,
-  ICustomerRare,
-  IIngredient,
-  IRecipe,
-  TPlace,
-} from '@/lib/types';
-import { ALL_PLACES } from '@/lib/types';
+  BeverageCatalogItem,
+  NormalCustomerCatalogItem,
+  RareCustomerCatalogItem,
+  IngredientCatalogItem,
+  RecipeCatalogItem,
+  PlaceName,
+} from '@/lib/catalog-types';
+import { ALL_PLACES } from '@/lib/catalog-types';
 
 const NON_ORDERABLE_RARE_FOOD_TAGS = new Set(['流行喜爱', '流行厌恶']);
 
 export interface RecommendationDataSet {
-  recipes: IRecipe[];
-  ingredients: IIngredient[];
-  beverages: IBeverage[];
-  normalCustomers: ICustomerNormal[];
-  rareCustomers: ICustomerRare[];
+  recipes: RecipeCatalogItem[];
+  ingredients: IngredientCatalogItem[];
+  beverages: BeverageCatalogItem[];
+  normalCustomers: NormalCustomerCatalogItem[];
+  rareCustomers: RareCustomerCatalogItem[];
   foodTagIdMap: Record<string, string>;
   beverageTagIdMap: Record<string, string>;
   tagPriorityRules: RuntimeTagPriorityRule[];
@@ -46,11 +46,11 @@ export interface RuntimeDataCatalogSnapshot {
   isComplete: boolean;
   source: string;
   status: string;
-  recipes: Array<Partial<IRecipe> & { id: number; recipeId: number; name: string }>;
-  ingredients: Array<Partial<IIngredient> & { id: number; name: string }>;
-  beverages: Array<Partial<IBeverage> & { id: number; name: string }>;
-  normalCustomers: Array<Partial<ICustomerNormal> & { id: number; name: string }>;
-  rareCustomers: Array<Partial<ICustomerRare> & { id: number; name: string }>;
+  recipes: Array<Partial<RecipeCatalogItem> & { id: number; recipeId: number; name: string }>;
+  ingredients: Array<Partial<IngredientCatalogItem> & { id: number; name: string }>;
+  beverages: Array<Partial<BeverageCatalogItem> & { id: number; name: string }>;
+  normalCustomers: Array<Partial<NormalCustomerCatalogItem> & { id: number; name: string }>;
+  rareCustomers: Array<Partial<RareCustomerCatalogItem> & { id: number; name: string }>;
   foodTagIdMap?: Record<string, string>;
   beverageTagIdMap?: Record<string, string>;
   tagPriorityRules?: RuntimeTagPriorityRule[];
@@ -63,19 +63,19 @@ export function buildRecommendationDataSet(
 
   const recipes = runtimeData.recipes
     .map(normalizeRuntimeRecipe)
-    .filter((item): item is IRecipe => item !== null);
+    .filter((item): item is RecipeCatalogItem => item !== null);
   const ingredients = runtimeData.ingredients
     .map(normalizeRuntimeIngredient)
-    .filter((item): item is IIngredient => item !== null);
+    .filter((item): item is IngredientCatalogItem => item !== null);
   const beverages = runtimeData.beverages
     .map(normalizeRuntimeBeverage)
-    .filter((item): item is IBeverage => item !== null);
+    .filter((item): item is BeverageCatalogItem => item !== null);
   const normalCustomers = runtimeData.normalCustomers
     .map(normalizeRuntimeNormalCustomer)
-    .filter((item): item is ICustomerNormal => item !== null);
+    .filter((item): item is NormalCustomerCatalogItem => item !== null);
   const rareCustomers = runtimeData.rareCustomers
     .map(normalizeRuntimeRareCustomerData)
-    .filter((item): item is ICustomerRare => item !== null);
+    .filter((item): item is RareCustomerCatalogItem => item !== null);
 
   if (
     recipes.length === 0
@@ -117,19 +117,19 @@ export function buildRecommendationDataIndexes(data: RecommendationDataSet) {
 }
 
 export function getRareCustomersByPlace(
-  place: TPlace,
+  place: PlaceName,
   data: RecommendationDataSet = DEFAULT_RECOMMENDATION_DATA,
-): ICustomerRare[] {
+): RareCustomerCatalogItem[] {
   return data.rareCustomers.filter((customer) => customer.places.includes(place));
 }
 
 export function getAllRareCustomers(
   data: RecommendationDataSet = DEFAULT_RECOMMENDATION_DATA,
-): ICustomerRare[] {
+): RareCustomerCatalogItem[] {
   return data.rareCustomers;
 }
 
-function normalizeRuntimeRecipe(value: RuntimeDataCatalogSnapshot['recipes'][number]): IRecipe | null {
+function normalizeRuntimeRecipe(value: RuntimeDataCatalogSnapshot['recipes'][number]): RecipeCatalogItem | null {
   if (!Number.isFinite(value.id) || !Number.isFinite(value.recipeId) || !value.name) return null;
   return {
     id: value.id,
@@ -148,7 +148,7 @@ function normalizeRuntimeRecipe(value: RuntimeDataCatalogSnapshot['recipes'][num
   };
 }
 
-function normalizeRuntimeIngredient(value: RuntimeDataCatalogSnapshot['ingredients'][number]): IIngredient | null {
+function normalizeRuntimeIngredient(value: RuntimeDataCatalogSnapshot['ingredients'][number]): IngredientCatalogItem | null {
   if (!Number.isFinite(value.id) || !value.name) return null;
   return {
     id: value.id,
@@ -163,7 +163,7 @@ function normalizeRuntimeIngredient(value: RuntimeDataCatalogSnapshot['ingredien
   };
 }
 
-function normalizeRuntimeBeverage(value: RuntimeDataCatalogSnapshot['beverages'][number]): IBeverage | null {
+function normalizeRuntimeBeverage(value: RuntimeDataCatalogSnapshot['beverages'][number]): BeverageCatalogItem | null {
   if (!Number.isFinite(value.id) || !value.name) return null;
   return {
     id: value.id,
@@ -179,7 +179,7 @@ function normalizeRuntimeBeverage(value: RuntimeDataCatalogSnapshot['beverages']
 
 function normalizeRuntimeNormalCustomer(
   value: RuntimeDataCatalogSnapshot['normalCustomers'][number],
-): ICustomerNormal | null {
+): NormalCustomerCatalogItem | null {
   if (!Number.isFinite(value.id) || !isUsableRuntimeName(value.name)) return null;
   const places = normalizePlaces(value.places);
   const positiveTags = normalizeStringArray(value.positiveTags);
@@ -199,7 +199,7 @@ function normalizeRuntimeNormalCustomer(
 
 function normalizeRuntimeRareCustomerData(
   value: RuntimeDataCatalogSnapshot['rareCustomers'][number],
-): ICustomerRare | null {
+): RareCustomerCatalogItem | null {
   if (!Number.isFinite(value.id) || !isUsableRuntimeName(value.name)) return null;
   const places = normalizePlaces(value.places);
   const positiveTags = normalizeStringArray(value.positiveTags).filter(isOrderableRareFoodTag);
@@ -273,9 +273,9 @@ function normalizeNumberArray(value: unknown): number[] {
   return result;
 }
 
-function normalizePlaces(value: unknown): TPlace[] {
+function normalizePlaces(value: unknown): PlaceName[] {
   const places = normalizeStringArray(value)
-    .filter((place): place is TPlace => (ALL_PLACES as string[]).includes(place));
+    .filter((place): place is PlaceName => (ALL_PLACES as string[]).includes(place));
   return places;
 }
 

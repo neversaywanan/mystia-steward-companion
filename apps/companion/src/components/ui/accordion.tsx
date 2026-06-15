@@ -1,7 +1,7 @@
 import { Accordion as MantineAccordion } from '@mantine/core';
 import type { ReactNode } from 'react';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type AccordionProps = React.ComponentProps<typeof MantineAccordion>;
 
@@ -10,7 +10,7 @@ function Accordion({ className, defaultValue, value, ...props }: AccordionProps)
   return (
     <MantineAccordion
       data-slot="accordion"
-      className={cn('steward-accordion', className)}
+      className={composeClassNames('steward-accordion', className)}
       defaultValue={defaultValue}
       value={value}
       multiple={multiple}
@@ -23,7 +23,7 @@ function AccordionItem({ className, ...props }: React.ComponentProps<typeof Mant
   return (
     <MantineAccordion.Item
       data-slot="accordion-item"
-      className={cn('steward-accordion-item', className)}
+      className={composeClassNames('steward-accordion-item', className)}
       {...props}
     />
   );
@@ -37,7 +37,7 @@ function AccordionTrigger({
   return (
     <MantineAccordion.Control
       data-slot="accordion-trigger"
-      className={cn('steward-accordion-trigger', className)}
+      className={composeClassNames('steward-accordion-trigger', className)}
       {...props}
     >
       {children}
@@ -52,7 +52,7 @@ function AccordionContent({
   return (
     <MantineAccordion.Panel
       data-slot="accordion-content"
-      className={cn('steward-accordion-content text-sm', className)}
+      className={composeClassNames('steward-accordion-content text-sm', className)}
       {...props}
     />
   );

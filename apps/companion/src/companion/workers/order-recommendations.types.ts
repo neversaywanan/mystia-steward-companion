@@ -9,7 +9,7 @@ import type {
   RuntimeMissionServeTarget,
 } from '@/companion/types';
 import type { RecommendationDataSet } from '@/lib/recommendation-data';
-import type { ICustomerRare } from '@/lib/types';
+import type { RareCustomerCatalogItem } from '@/lib/catalog-types';
 
 export interface OrderRecommendationResult {
   recommendations: OrderRecommendation[];
@@ -19,7 +19,7 @@ export interface OrderRecommendationResult {
 export interface OrderRecommendationWorkerPayload {
   orders: NightBusinessOrder[];
   runtime: RecommendationStateSnapshot | null;
-  runtimeRareCustomers: ICustomerRare[];
+  runtimeRareCustomers: RareCustomerCatalogItem[];
   favorites: FavoriteData;
   preferences: CompanionPreferences;
   activeRareGuests: NightBusinessGuest[];

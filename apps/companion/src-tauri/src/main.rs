@@ -57,23 +57,29 @@ struct PersistedWindowState {
 }
 
 #[tauri::command]
-fn fetch_snapshot(endpoint: String, token: String) -> Result<String, String> {
-    request_local_api(&endpoint, None, &token)
+fn fetch_snapshot(endpoint: String, token: String, timeout_ms: Option<u64>) -> Result<String, String> {
+    request_local_api_with_frontend_timeout(&endpoint, None, &token, timeout_ms)
 }
 
-fn request_local_api(
+fn request_local_api_with_frontend_timeout(
     endpoint: &str,
     path_override: Option<&str>,
     token: &str,
+    timeout_ms: Option<u64>,
 ) -> Result<String, String> {
+    let timeout = normalize_local_api_timeout(timeout_ms);
     request_local_api_with_timeout(
         endpoint,
         path_override,
         token,
-        Duration::from_millis(1800),
-        Duration::from_millis(1800),
-        Duration::from_millis(1200),
+        timeout,
+        timeout,
+        Duration::from_millis(timeout.as_millis().min(1200) as u64),
     )
+}
+
+fn normalize_local_api_timeout(timeout_ms: Option<u64>) -> Duration {
+    Duration::from_millis(timeout_ms.unwrap_or(1800).clamp(300, 5000))
 }
 
 fn request_local_api_with_timeout(

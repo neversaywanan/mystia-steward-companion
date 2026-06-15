@@ -249,22 +249,6 @@ export function ModSettingsPanel({
         <div className={DENSE_TWO_COLUMN_GRID}>
           <ListPanel title="推荐">
             <div className="space-y-4">
-              <SwitchControl
-                label="排除缺失厨具"
-                checked={preferences.filterMissingCookers}
-                onCheckedChange={(filterMissingCookers) => onPreferenceChange({ filterMissingCookers })}
-              />
-              <div className="text-xs text-muted-foreground">
-                进入经营场景后，若读取到已摆放厨具，推荐列表会隐藏当前场景无法制作的料理。
-              </div>
-              <SwitchControl
-                label="优先任务料理"
-                checked={preferences.prioritizeMissionRecipes}
-                onCheckedChange={(prioritizeMissionRecipes) => onPreferenceChange({ prioritizeMissionRecipes })}
-              />
-              <div className="text-xs text-muted-foreground">
-                当前稀客存在经营投喂任务时，把任务指定料理作为完整方案权重的一部分；只影响排序，不会自动完成任务。
-              </div>
               <SettingSegmentedControl
                 label="经营中订单排序"
                 value={preferences.serviceOrderSortMode}
@@ -296,6 +280,7 @@ export function ModSettingsPanel({
           <ListPanel title="推荐权重">
             <RecommendationSortProfileControl
               profile={preferences.recommendationSortProfile}
+              filterMissingCookers={preferences.filterMissingCookers}
               onChange={(recommendationSortProfile) => onPreferenceChange({ recommendationSortProfile })}
             />
           </ListPanel>
@@ -312,6 +297,14 @@ export function ModSettingsPanel({
                 ]}
                 onChange={(recommendationBudgetPolicy) => onPreferenceChange({ recommendationBudgetPolicy })}
               />
+              <SwitchControl
+                label="排除缺失厨具"
+                checked={preferences.filterMissingCookers}
+                onCheckedChange={(filterMissingCookers) => onPreferenceChange({ filterMissingCookers })}
+              />
+              <div className="text-xs text-muted-foreground">
+                进入经营场景后，若读取到已摆放厨具，推荐列表会隐藏当前场景无法制作的料理。
+              </div>
               <label className="flex items-center justify-between gap-3 text-sm">
                 <span className="min-w-0 text-muted-foreground">同基础料理显示</span>
                 <NumberInput
@@ -472,9 +465,11 @@ export function ModSettingsPanel({
 
 function RecommendationSortProfileControl({
   profile,
+  filterMissingCookers,
   onChange,
 }: {
   profile: RecommendationSortProfile;
+  filterMissingCookers: boolean;
   onChange: (profile: RecommendationSortProfile) => void;
 }) {
   const updateObjective = (
@@ -519,6 +514,11 @@ function RecommendationSortProfileControl({
         {RECOMMENDATION_OBJECTIVE_DEFINITIONS.map((definition) => {
           const rule = profile.objectives.find((item) => item.key === definition.key);
           if (!rule) return null;
+          const disabledByHardFilter = definition.key === 'cookerAvailable' && filterMissingCookers;
+          const controlDisabled = disabledByHardFilter;
+          const description = disabledByHardFilter
+            ? '已开启“排除缺失厨具”硬过滤，此软排序项当前不参与结果。'
+            : definition.description;
 
           return (
             <div key={definition.key} className="rounded-md border border-border p-2">
@@ -526,6 +526,7 @@ function RecommendationSortProfileControl({
                 <SwitchField
                   label={definition.label}
                   checked={rule.enabled}
+                  disabled={controlDisabled}
                   onCheckedChange={(enabled) => updateObjective(definition.key, { enabled })}
                 />
                 <Slider
@@ -533,15 +534,15 @@ function RecommendationSortProfileControl({
                   min={0}
                   max={100}
                   step={5}
-                  disabled={!rule.enabled}
+                  disabled={!rule.enabled || controlDisabled}
                   aria-label={`${definition.label}权重`}
                   onValueChange={(weight) => updateObjective(definition.key, { weight })}
                 />
-                <span className={rule.enabled ? 'text-right text-sm tabular-nums' : 'text-right text-sm tabular-nums text-muted-foreground'}>
+                <span className={rule.enabled && !controlDisabled ? 'text-right text-sm tabular-nums' : 'text-right text-sm tabular-nums text-muted-foreground'}>
                   {rule.weight}
                 </span>
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">{definition.description}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{description}</div>
             </div>
           );
         })}

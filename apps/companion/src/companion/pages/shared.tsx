@@ -1,7 +1,7 @@
-import { RecommendationItem, RecommendationMetaBadge, RecommendationTagBadges } from '@/components/RecommendationItem';
-import { CustomerScoreBadges } from '@/components/ScoreBadge';
-import { RegionSelector } from '@/components/RegionSelector';
-import { TagBadge } from '@/components/TagBadge';
+import { PlaceSelect } from '@/components/controls/PlaceSelect';
+import { RecommendationItem, RecommendationMetaBadge, RecommendationTagPills } from '@/components/RecommendationItem';
+import { CustomerCoverageBadges } from '@/components/recommendation/CustomerCoverageBadges';
+import { TagPill, TagPillGroup } from '@/components/recommendation/TagPillGroup';
 import { Badge, Button, EmptyRow, EmptyState, NumberInput, SegmentedControl, SliderField, SwitchField } from '@/components/ui-kit';
 import { findBeverageFavorite, findRecipeFavorite, beverageFavoriteKey, recipeFavoriteKey } from '@/companion/domain/favorites';
 import { formatDesk, formatIngredientNamesWithQty, formatIngredientWithQty, formatQtySuffix } from '@/companion/formatters';
@@ -27,8 +27,14 @@ import type {
   ToggleRecipeFavorite,
 } from '@/companion/types';
 import type { buildRecommendationDataIndexes } from '@/lib/recommendation-data';
-import type { INormalBeverageResult, INormalRecipeResult, IRareBeverageResult, IRareRecipeResult, TPlace } from '@/lib/types';
-import type { RecommendationBudgetResult } from '@/recommendation-engine';
+import { ALL_PLACES, type PlaceName } from '@/lib/catalog-types';
+import type {
+  NormalBeverageRecommendation,
+  NormalRecipeRecommendation,
+  RareBeverageRecommendation,
+  RareRecipeRecommendation,
+  RecommendationBudgetResult,
+} from '@/recommendation-engine';
 import {
   AUTOMATION_SWITCH_CELL,
   DENSE_TWO_COLUMN_GRID,
@@ -69,11 +75,11 @@ function TagSummary({
 
   return (
     <div className="mt-1 flex flex-wrap gap-1">
-      {tags.map((tag) => <TagBadge key={tag} tag={tag} variant="default" />)}
+      <TagPillGroup tags={tags} />
       {cancelledTags.map((tag) => (
-        <Badge key={`cancelled-${tag}`} variant="outline" className="text-muted-foreground">
+        <TagPill key={`cancelled-${tag}`} tone="suppressed">
           已抵消 {tag}
-        </Badge>
+        </TagPill>
       ))}
     </div>
   );
@@ -275,14 +281,14 @@ export function PlaceToolbar({
   onPlaceChange,
   onFollowDetectedPlace,
 }: {
-  selectedPlace: TPlace | null;
-  detectedPlace: TPlace | null;
-  onPlaceChange: (place: TPlace) => void;
+  selectedPlace: PlaceName | null;
+  detectedPlace: PlaceName | null;
+  onPlaceChange: (place: PlaceName) => void;
   onFollowDetectedPlace: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <RegionSelector value={selectedPlace} onChange={onPlaceChange} />
+      <PlaceSelect value={selectedPlace} places={ALL_PLACES} onChange={onPlaceChange} />
       {detectedPlace && (
         <Button size="sm" variant="outline" onClick={onFollowDetectedPlace}>
           跟随经营场景: {detectedPlace}
@@ -298,7 +304,7 @@ export function NormalRecipeRow({
   ownedIngredientQty,
   ingredientIdByName,
 }: {
-  recipe: INormalRecipeResult;
+  recipe: NormalRecipeRecommendation;
   index: number;
   ownedIngredientQty: Record<number, number>;
   ingredientIdByName: Map<string, number>;
@@ -318,10 +324,12 @@ export function NormalRecipeRow({
       meta={<RecommendationMetaBadge label="基础配方" value={baseRecipe} tone="base" />}
     >
       <div className="mt-1 flex flex-wrap gap-1">
-        {recipe.matchedTags.map((tag) => <TagBadge key={tag} tag={tag} variant="matched" />)}
+        {recipe.matchedTags.map((tag) => <TagPill key={tag} tone="match">{tag}</TagPill>)}
       </div>
       <div className="mt-1">
-        <CustomerScoreBadges scores={recipe.customerScores} />
+        <CustomerCoverageBadges
+          coverage={recipe.customerCoverage}
+        />
       </div>
     </RecommendationItem>
   );
@@ -332,7 +340,7 @@ export function NormalBeverageRow({
   index,
   ownedBeverageQty,
 }: {
-  beverage: INormalBeverageResult;
+  beverage: NormalBeverageRecommendation;
   index: number;
   ownedBeverageQty: Record<number, number>;
 }) {
@@ -343,9 +351,11 @@ export function NormalBeverageRow({
       titleSuffix={formatQtySuffix(ownedBeverageQty[beverage.beverage.id])}
       summary={`覆盖 ${beverage.totalCoverage} · 价格 ${beverage.beverage.price}`}
     >
-      <RecommendationTagBadges tags={beverage.beverage.tags} matchedTags={beverage.matchedTags} />
+      <RecommendationTagPills tags={beverage.beverage.tags} matchedTags={beverage.matchedTags} />
       <div className="mt-1">
-        <CustomerScoreBadges scores={beverage.customerScores} />
+        <CustomerCoverageBadges
+          coverage={beverage.customerCoverage}
+        />
       </div>
     </RecommendationItem>
   );
@@ -515,7 +525,7 @@ export function RecipeRecommendationRow({
   compact = false,
   onToggleFavorite,
 }: {
-  recipe: IRareRecipeResult;
+  recipe: RareRecipeRecommendation;
   index: number;
   ownedIngredientQty: Record<number, number>;
   ingredientIdByName: Map<string, number>;
@@ -588,7 +598,7 @@ export function BeverageRecommendationRow({
   compact = false,
   onToggleFavorite,
 }: {
-  beverage: IRareBeverageResult;
+  beverage: RareBeverageRecommendation;
   index: number;
   ownedBeverageQty: Record<number, number>;
   favorite?: FavoriteBeverageEntry | null;
@@ -617,7 +627,7 @@ export function BeverageRecommendationRow({
       } : undefined}
       gamepadRowKey={`beverage:${favoriteKey}`}
     >
-      {!compact && <RecommendationTagBadges tags={beverage.beverage.tags} matchedTags={beverage.matchedTags} />}
+      {!compact && <RecommendationTagPills tags={beverage.beverage.tags} matchedTags={beverage.matchedTags} />}
     </RecommendationItem>
   );
 }

@@ -20,7 +20,7 @@ import type { FavoriteData, RecommendationStateSnapshot, RuntimeSets, ToggleBeve
 import { BeverageRecommendationRow, PlaceToolbar, RecipeRecommendationRow, RuntimeUnavailable } from '@/companion/pages/shared';
 import { DENSE_THREE_COLUMN_GRID, DENSE_TWO_COLUMN_GRID, MAX_RECOMMENDATION_ROWS, RECOMMENDATION_SCROLL_AREA } from '@/companion/pages/shared-constants';
 import { buildRecommendationDataIndexes, getRareCustomersByPlace, type RecommendationDataSet } from '@/lib/recommendation-data';
-import type { ICustomerRare, TPlace } from '@/lib/types';
+import type { RareCustomerCatalogItem, PlaceName } from '@/lib/catalog-types';
 import { buildRareOrderPlans } from '@/recommendation-engine';
 
 export function ModRarePanel({
@@ -47,9 +47,9 @@ export function ModRarePanel({
 }: {
   runtime: RecommendationStateSnapshot | null;
   runtimeSets: RuntimeSets | null;
-  runtimeRareCustomers: ICustomerRare[];
-  selectedPlace: TPlace | null;
-  detectedPlace: TPlace | null;
+  runtimeRareCustomers: RareCustomerCatalogItem[];
+  selectedPlace: PlaceName | null;
+  detectedPlace: PlaceName | null;
   data: RecommendationDataSet;
   rareCustomerId: number | null;
   requiredFoodTag: string;
@@ -58,7 +58,7 @@ export function ModRarePanel({
   favoriteBusyKey: string;
   favoriteError: string;
   preferences: CompanionPreferences;
-  onPlaceChange: (place: TPlace) => void;
+  onPlaceChange: (place: PlaceName) => void;
   onFollowDetectedPlace: () => void;
   onRareCustomerChange: (customerId: number | null) => void;
   onFoodTagChange: (tag: string) => void;

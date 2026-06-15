@@ -1,7 +1,7 @@
 import { Tabs as MantineTabs } from '@mantine/core';
 import type { ComponentProps } from 'react';
 
-import { cn } from "@/lib/utils"
+import { composeClassNames } from '@/components/ui/style';
 
 function Tabs({
   className,
@@ -18,7 +18,7 @@ function Tabs({
       variant="default"
       color="steward"
       orientation={orientation}
-      className={cn("group/tabs flex gap-2", orientation === "vertical" ? "flex-row" : "flex-col", className)}
+      className={composeClassNames("group/tabs flex gap-2", orientation === "vertical" ? "flex-row" : "flex-col", className)}
       onChange={onValueChange}
       {...props}
     />
@@ -29,7 +29,7 @@ function TabsList({ className, ...props }: ComponentProps<typeof MantineTabs.Lis
   return (
     <MantineTabs.List
       data-slot="tabs-list"
-      className={cn('steward-tabs-list group/tabs-list', className)}
+      className={composeClassNames('steward-tabs-list group/tabs-list', className)}
       {...props}
     />
   )
@@ -39,7 +39,7 @@ function TabsTrigger({ className, ...props }: ComponentProps<typeof MantineTabs.
   return (
     <MantineTabs.Tab
       data-slot="tabs-trigger"
-      className={cn('steward-tabs-trigger', className)}
+      className={composeClassNames('steward-tabs-trigger', className)}
       {...props}
     />
   )
@@ -49,7 +49,7 @@ function TabsContent({ className, ...props }: ComponentProps<typeof MantineTabs.
   return (
     <MantineTabs.Panel
       data-slot="tabs-content"
-      className={cn("steward-tabs-content flex-1 text-sm outline-none", className)}
+      className={composeClassNames("steward-tabs-content flex-1 text-sm outline-none", className)}
       {...props}
     />
   )

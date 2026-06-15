@@ -1,4 +1,11 @@
 export {
+  buildNormalBeverageRecommendations,
+  buildNormalFoodRecommendations,
+  compareNormalBeverageRecommendations,
+  compareNormalFoodRecommendations,
+  getNormalCustomersByPlace,
+} from '@/recommendation-engine/normal-coverage';
+export {
   buildRareBeverageCandidates,
   buildRareFoodCandidates,
   buildRareOrderPlans,
@@ -6,9 +13,12 @@ export {
   sortRareOrderPlans,
 } from '@/recommendation-engine/rare-orders';
 export {
+  PROJECT_VERIFIED_TAG_PRIORITY_RULES,
+  findTagsThatCanSuppress,
+  hasForbiddenIngredientTag,
   resolveFoodTags,
   resolveTagPriority,
-} from '@/recommendation-engine/tags';
+} from '@/recommendation-engine/tag-resolution';
 export {
   DEFAULT_RECOMMENDATION_SORT_PROFILE,
   RECOMMENDATION_OBJECTIVE_DEFINITIONS,
@@ -21,7 +31,12 @@ export type {
   BeverageCandidate,
   ConditionResult,
   FoodCandidate,
+  CustomerCoverageSummary,
+  NormalBeverageRecommendation,
+  NormalRecipeRecommendation,
+  RareBeverageRecommendation,
   RareOrderRecommendationPlan,
+  RareRecipeRecommendation,
   RareTagOrderDemand,
   RecommendationBudgetContext,
   RecommendationBudgetPolicy,
@@ -32,6 +47,9 @@ export type {
   RecommendationRuntimeContext,
   ResolvedTags,
 } from '@/recommendation-engine/types';
+export type {
+  NormalCoverageRuntimeContext,
+} from '@/recommendation-engine/normal-coverage';
 export type {
   RecommendationBucketPolicy,
   RecommendationObjectiveDefinition,

@@ -1,7 +1,7 @@
 import { NumberInput as MantineNumberInput } from '@mantine/core';
 import type { MantineSize, NumberInputProps as MantineNumberInputProps } from '@mantine/core';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type NumberInputProps = Omit<MantineNumberInputProps, 'value' | 'onChange' | 'onValueChange' | 'size'> & {
   value: number;
@@ -25,8 +25,8 @@ function NumberInput({
       size={size}
       allowDecimal={false}
       clampBehavior="strict"
-      className={cn('steward-number-input-root', className)}
-      classNames={{ input: cn('steward-input steward-number-input', inputClassName) }}
+      className={composeClassNames('steward-number-input-root', className)}
+      classNames={{ input: composeClassNames('steward-input steward-number-input', inputClassName) }}
       onChange={(nextValue) => {
         const parsed = typeof nextValue === 'number' ? nextValue : Number(nextValue);
         if (Number.isFinite(parsed)) {

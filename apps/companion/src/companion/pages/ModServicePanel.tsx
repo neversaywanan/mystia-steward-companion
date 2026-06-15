@@ -37,7 +37,7 @@ import {
   SwitchControl,
 } from '@/companion/pages/shared';
 import { buildRecommendationDataIndexes, type RecommendationDataSet } from '@/lib/recommendation-data';
-import type { TPlace } from '@/lib/types';
+import type { PlaceName } from '@/lib/catalog-types';
 
 export function ModServicePanel({
   runtime,
@@ -80,7 +80,7 @@ export function ModServicePanel({
 }: {
   runtime: RecommendationStateSnapshot | null;
   night: NightBusinessContext | null;
-  detectedPlace: TPlace | null;
+  detectedPlace: PlaceName | null;
   recommendations: OrderRecommendation[];
   recommendationIssues: RecommendationIssue[];
   data: RecommendationDataSet;

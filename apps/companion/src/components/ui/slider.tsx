@@ -1,7 +1,7 @@
 import { Slider as MantineSlider } from '@mantine/core';
 import type { SliderProps as MantineSliderProps } from '@mantine/core';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type SliderProps = Omit<MantineSliderProps, 'value' | 'onChange'> & {
   value: number;
@@ -23,7 +23,7 @@ function Slider({
   return (
     <div
       data-slot="slider"
-      className={cn('relative py-2', className)}
+      className={composeClassNames('relative py-2', className)}
     >
       <MantineSlider
         color="steward"

@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 import { IconStar, IconStarFilled } from '@tabler/icons-react';
 
-import { TagBadge } from '@/components/TagBadge';
+import { TagPillGroup } from '@/components/recommendation/TagPillGroup';
 import { Button } from '@/components/ui-kit';
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type RecommendationMetaTone = 'cooker' | 'base' | 'extra' | 'neutral';
 
@@ -31,7 +31,7 @@ interface RecommendationItemProps {
   className?: string;
 }
 
-interface RecommendationTagBadgesProps {
+interface RecommendationTagPillsProps {
   tags: readonly string[];
   matchedTags?: readonly string[];
   className?: string;
@@ -55,7 +55,7 @@ function RecommendationItem({
 
   return (
     <div
-      className={cn(
+      className={composeClassNames(
         compact ? 'rounded-md border border-border/80 p-1.5 text-xs' : 'rounded-md border border-border/80 p-2 text-sm',
         className,
       )}
@@ -117,39 +117,25 @@ function RecommendationMetaBadge({
   }[tone];
 
   return (
-    <span className={cn('inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs', toneClass, className)}>
+    <span className={composeClassNames('inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs', toneClass, className)}>
       <span className="shrink-0 font-medium">{label}</span>
       <span className="min-w-0 truncate" title={value}>{value}</span>
     </span>
   );
 }
 
-function RecommendationTagBadges({
+function RecommendationTagPills({
   tags,
   matchedTags = [],
   className,
-}: RecommendationTagBadgesProps) {
-  if (tags.length === 0) return null;
-
-  const matchedTagSet = new Set(matchedTags);
-
-  return (
-    <div className={cn('mt-1 flex flex-wrap gap-1', className)}>
-      {tags.map((tag) => (
-        <TagBadge
-          key={tag}
-          tag={tag}
-          variant={matchedTagSet.has(tag) ? 'matched' : 'default'}
-        />
-      ))}
-    </div>
-  );
+}: RecommendationTagPillsProps) {
+  return <TagPillGroup tags={tags} matchedTags={matchedTags} className={composeClassNames('mt-1', className)} />;
 }
 
-export { RecommendationItem, RecommendationMetaBadge, RecommendationTagBadges };
+export { RecommendationItem, RecommendationMetaBadge, RecommendationTagPills };
 export type {
   RecommendationFavoriteAction,
   RecommendationItemProps,
   RecommendationMetaTone,
-  RecommendationTagBadgesProps,
+  RecommendationTagPillsProps,
 };

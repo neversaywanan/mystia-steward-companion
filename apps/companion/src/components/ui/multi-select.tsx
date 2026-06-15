@@ -1,7 +1,7 @@
 import { MultiSelect as MantineMultiSelect } from '@mantine/core';
 import type { MultiSelectProps as MantineMultiSelectProps } from '@mantine/core';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type MultiSelectOption = {
   value: string;
@@ -44,13 +44,13 @@ function MultiSelectBox({
       maxDropdownHeight={280}
       nothingFoundMessage="无匹配项"
       size={size}
-      className={cn('steward-multi-select', className)}
+      className={composeClassNames('steward-multi-select', className)}
       classNames={{
-        input: cn('steward-select-input', inputClassName),
+        input: composeClassNames('steward-select-input', inputClassName),
         inputField: 'steward-multi-select-field',
         pillsList: 'steward-multi-select-pills',
-        dropdown: cn('steward-select-dropdown', dropdownClassName),
-        option: cn('steward-select-option', optionClassName),
+        dropdown: composeClassNames('steward-select-dropdown', dropdownClassName),
+        option: composeClassNames('steward-select-option', optionClassName),
       }}
       comboboxProps={{
         withinPortal: true,

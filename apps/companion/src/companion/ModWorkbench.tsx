@@ -126,7 +126,7 @@ import {
 } from '@/lib/recommendation-data';
 import { isTauriRuntime } from '@/lib/tauri-runtime';
 import { useThemeMode } from '@/lib/theme';
-import type { TPlace } from '@/lib/types';
+import type { PlaceName } from '@/lib/catalog-types';
 
 const AUTO_FIRST_ORDER_TICK_MS = 1500;
 const AUTO_NORMAL_ORDER_TICK_MS = 500;
@@ -187,7 +187,7 @@ export function ModWorkbench() {
     tab,
     refresh,
   });
-  const [manualPlace, setManualPlace] = useState<TPlace | null>(null);
+  const [manualPlace, setManualPlace] = useState<PlaceName | null>(null);
   const [rareCustomerId, setRareCustomerId] = useState<number | null>(null);
   const [requiredFoodTag, setRequiredFoodTag] = useState('');
   const [requiredBeverageTag, setRequiredBeverageTag] = useState('');

@@ -2,7 +2,7 @@ import * as React from "react"
 import { Input as MantineInput } from '@mantine/core';
 import type { MantineSize } from '@mantine/core';
 
-import { cn } from "@/lib/utils"
+import { composeClassNames } from '@/components/ui/style';
 
 type InputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> & {
   size?: MantineSize | (string & {});
@@ -15,8 +15,8 @@ function Input({ className, inputClassName, type, size = 'sm', ...props }: Input
       type={type}
       data-slot="input"
       size={size}
-      className={cn('steward-input-root', className)}
-      classNames={{ input: cn('steward-input', inputClassName) }}
+      className={composeClassNames('steward-input-root', className)}
+      classNames={{ input: composeClassNames('steward-input', inputClassName) }}
       {...props}
     />
   )

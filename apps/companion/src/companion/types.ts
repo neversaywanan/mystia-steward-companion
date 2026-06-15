@@ -1,10 +1,13 @@
 import type { RuntimeDataCatalogSnapshot } from '@/lib/recommendation-data';
 import type {
-  ICustomerRare,
-  IRareBeverageResult,
-  IRareRecipeResult,
-} from '@/lib/types';
-import type { RareOrderRecommendationPlan, RecommendationBudgetResult } from '@/recommendation-engine';
+  RareCustomerCatalogItem,
+} from '@/lib/catalog-types';
+import type {
+  RareBeverageRecommendation,
+  RareOrderRecommendationPlan,
+  RareRecipeRecommendation,
+  RecommendationBudgetResult,
+} from '@/recommendation-engine';
 
 export type ModTab = 'overview' | 'normal' | 'rare' | 'service' | 'tasks' | 'inventory' | 'help' | 'logs' | 'settings';
 export type OverviewTab = 'status' | 'inventory' | 'actions';
@@ -174,14 +177,14 @@ export interface RuntimeSets {
 }
 
 export interface CachedRecommendation {
-  customer: ICustomerRare;
+  customer: RareCustomerCatalogItem;
   preparationPlan: RareOrderRecommendationPlan | null;
   budget: RecommendationBudgetResult | null;
   blockedMessages: string[];
-  recipes: IRareRecipeResult[];
-  beverages: IRareBeverageResult[];
-  preferenceRecipes: IRareRecipeResult[];
-  preferenceBeverages: IRareBeverageResult[];
+  recipes: RareRecipeRecommendation[];
+  beverages: RareBeverageRecommendation[];
+  preferenceRecipes: RareRecipeRecommendation[];
+  preferenceBeverages: RareBeverageRecommendation[];
 }
 
 export interface OrderRecommendation extends CachedRecommendation {
@@ -429,8 +432,8 @@ export interface AutomationResourceOverview {
   tray: AutomationTrayResourceRow[];
 }
 
-export type ToggleRecipeFavorite = (customer: ICustomerRare, foodTag: string, recipe: IRareRecipeResult) => Promise<void>;
-export type ToggleBeverageFavorite = (customer: ICustomerRare, beverageTag: string, beverage: IRareBeverageResult) => Promise<void>;
+export type ToggleRecipeFavorite = (customer: RareCustomerCatalogItem, foodTag: string, recipe: RareRecipeRecommendation) => Promise<void>;
+export type ToggleBeverageFavorite = (customer: RareCustomerCatalogItem, beverageTag: string, beverage: RareBeverageRecommendation) => Promise<void>;
 
 export interface AutomationLogEntry {
   raw: string;

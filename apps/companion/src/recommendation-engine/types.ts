@@ -1,4 +1,10 @@
-import type { IBeverage, ICustomerRare, IIngredient, IRecipe } from '@/lib/types';
+import type {
+  BeverageCatalogItem,
+  IngredientCatalogItem,
+  PlaceName,
+  RareCustomerCatalogItem,
+  RecipeCatalogItem,
+} from '@/lib/catalog-types';
 import type { RuntimeTagPriorityRule } from '@/lib/recommendation-data';
 
 export type RecommendationDemand =
@@ -8,7 +14,7 @@ export type RecommendationDemand =
 
 export interface RareTagOrderDemand {
   type: 'rare-tag-order';
-  customer: ICustomerRare;
+  customer: RareCustomerCatalogItem;
   requiredFoodTag: string;
   requiredBeverageTag: string;
 }
@@ -21,6 +27,7 @@ export interface NormalExactOrderDemand {
 
 export interface NormalCoverageDemand {
   type: 'normal-coverage';
+  place: PlaceName;
   customerIds: number[];
 }
 
@@ -85,9 +92,57 @@ export interface ResolvedTags {
   suppressedTags: string[];
 }
 
+export interface CustomerCoverageSummary {
+  customerId: number;
+  customerName: string;
+  matchedTagCount: number;
+  matchedTags: string[];
+}
+
+export interface NormalRecipeRecommendation {
+  recipe: RecipeCatalogItem;
+  activeTags: string[];
+  suppressedTags: string[];
+  customerCoverage: CustomerCoverageSummary[];
+  totalCoverage: number;
+  coveredCustomerCount: number;
+  profit: number;
+  matchedTags: string[];
+  ingredientCost: number;
+  conditionResults: ConditionResult[];
+}
+
+export interface NormalBeverageRecommendation {
+  beverage: BeverageCatalogItem;
+  activeTags: string[];
+  customerCoverage: CustomerCoverageSummary[];
+  totalCoverage: number;
+  coveredCustomerCount: number;
+  matchedTags: string[];
+  conditionResults: ConditionResult[];
+}
+
+export interface RareRecipeRecommendation {
+  recipe: RecipeCatalogItem;
+  extraIngredients: IngredientCatalogItem[];
+  missionPriority?: boolean;
+  extraIngredientReasonTags: Record<number, string[]>;
+  allTags: string[];
+  cancelledTags: string[];
+  meetsRequiredFood: boolean;
+  baseCost: number;
+  extraCost: number;
+}
+
+export interface RareBeverageRecommendation {
+  beverage: BeverageCatalogItem;
+  meetsRequiredBev: boolean;
+  matchedTags: string[];
+}
+
 export interface FoodCandidate {
-  recipe: IRecipe;
-  extraIngredients: IIngredient[];
+  recipe: RecipeCatalogItem;
+  extraIngredients: IngredientCatalogItem[];
   extraIngredientReasonTags: Record<number, string[]>;
   activeTags: string[];
   suppressedTags: string[];
@@ -102,7 +157,7 @@ export interface FoodCandidate {
 }
 
 export interface BeverageCandidate {
-  beverage: IBeverage;
+  beverage: BeverageCatalogItem;
   activeTags: string[];
   matchedTags: string[];
   meetsRequiredBeverage: boolean;

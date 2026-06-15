@@ -2,7 +2,7 @@ import { Switch as MantineSwitch } from '@mantine/core';
 import type { SwitchProps as MantineSwitchProps } from '@mantine/core';
 import type { LabelHTMLAttributes } from 'react';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type SwitchProps = Omit<MantineSwitchProps, 'checked' | 'onChange'> & {
   checked?: boolean;
@@ -15,7 +15,7 @@ function Switch({ className, checked, onCheckedChange, ...props }: SwitchProps) 
       data-slot="switch"
       data-checked={checked ? 'true' : 'false'}
       data-disabled={props.disabled ? 'true' : undefined}
-      className={cn('steward-switch', className)}
+      className={composeClassNames('steward-switch', className)}
       checked={checked}
       color="steward"
       size="sm"
@@ -43,7 +43,7 @@ function SwitchField({
 }: SwitchFieldProps) {
   return (
     <label
-      className={cn('steward-switch-field flex items-center gap-2.5 text-sm', disabled && 'text-muted-foreground', className)}
+      className={composeClassNames('steward-switch-field flex items-center gap-2.5 text-sm', disabled && 'text-muted-foreground', className)}
       data-disabled={disabled ? 'true' : undefined}
       title={title}
       {...props}

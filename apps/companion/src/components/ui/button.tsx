@@ -2,7 +2,7 @@ import { Button as MantineButton } from '@mantine/core';
 import type { ButtonProps as MantineButtonProps } from '@mantine/core';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type ButtonVariant = 'default' | 'outline' | 'secondary' | 'ghost' | 'destructive' | 'link';
 type ButtonSize = 'default' | 'xs' | 'sm' | 'lg' | 'icon' | 'icon-xs' | 'icon-sm' | 'icon-lg';
@@ -45,7 +45,7 @@ function Button({ className, variant = 'default', size = 'default', ...props }: 
       color={variant === 'destructive' ? 'red' : 'steward'}
       variant={buttonVariantMap[variant]}
       size={buttonSizeMap[size]}
-      className={cn(
+      className={composeClassNames(
         'steward-button',
         size.startsWith('icon') && 'steward-button-icon',
         variant === 'link' && 'steward-button-link',

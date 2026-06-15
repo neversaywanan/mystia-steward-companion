@@ -585,6 +585,12 @@ html::-webkit-scrollbar-thumb:hover,
 .steward-select-input {
   width: 100%;
   caret-color: var(--primary);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease,
+    outline-color 120ms ease;
 }
 
 .steward-multi-select .steward-select-input {
@@ -706,6 +712,39 @@ html::-webkit-scrollbar-thumb:hover,
   color: color-mix(in srgb, var(--muted-foreground) 55%, transparent) !important;
 }
 
+@media (hover: hover) {
+  .steward-input-root:hover,
+  .steward-number-input-root:hover,
+  .steward-number-input-root .mantine-Input-wrapper:hover,
+  .steward-multi-select:hover,
+  .steward-multi-select .mantine-Input-wrapper:hover,
+  .steward-select:hover,
+  .steward-select .mantine-Input-wrapper:hover {
+    --input-bd: color-mix(in srgb, var(--primary) 44%, var(--input)) !important;
+    --input-bg: color-mix(
+      in srgb,
+      var(--companion-card-surface) 84%,
+      var(--companion-muted-surface)
+    ) !important;
+  }
+
+  .steward-input:hover,
+  .steward-number-input-root:hover .steward-number-input,
+  .steward-multi-select:hover .steward-select-input,
+  .steward-select:hover .steward-select-input {
+    border-color: color-mix(in srgb, var(--ring) 54%, var(--input)) !important;
+    background-color: color-mix(
+      in srgb,
+      var(--companion-card-surface) 78%,
+      var(--accent)
+    ) !important;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--ring) 20%, transparent);
+    filter: brightness(1.04);
+    outline: 1px solid color-mix(in srgb, var(--ring) 22%, transparent);
+    outline-offset: 0;
+  }
+}
+
 .steward-number-input {
   font-variant-numeric: tabular-nums;
 }
@@ -735,6 +774,9 @@ html::-webkit-scrollbar-thumb:hover,
   --sc-label-color: var(--foreground) !important;
   --sc-shadow: none !important;
   --separator-color: color-mix(in srgb, var(--input) 42%, transparent) !important;
+  transition:
+    box-shadow 120ms ease,
+    background-color 120ms ease;
 }
 
 .steward-segmented-control .mantine-SegmentedControl-indicator {
@@ -749,8 +791,15 @@ html::-webkit-scrollbar-thumb:hover,
   align-items: center;
   justify-content: center;
   padding-block: 0 !important;
+  border-radius: calc(var(--radius) - 1px);
   color: var(--muted-foreground);
   line-height: var(--steward-control-line-sm);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    filter 120ms ease,
+    box-shadow 120ms ease,
+    outline-color 120ms ease;
 }
 
 .steward-segmented-control .mantine-SegmentedControl-innerLabel {
@@ -762,8 +811,16 @@ html::-webkit-scrollbar-thumb:hover,
 }
 
 @media (hover: hover) {
-  .steward-segmented-control .mantine-SegmentedControl-label:not([data-active], [data-disabled], [data-read-only]):hover {
+  .steward-segmented-control:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 38%, var(--input));
+  }
+
+  .steward-segmented-control .mantine-SegmentedControl-label:not([data-disabled], [data-read-only]):hover {
+    background-color: color-mix(in srgb, var(--primary) 10%, transparent) !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent);
     color: var(--foreground) !important;
+    filter: brightness(1.05);
+    outline-color: color-mix(in srgb, var(--ring) 55%, transparent);
   }
 }
 
@@ -822,7 +879,23 @@ html::-webkit-scrollbar-thumb:hover,
 }
 
 .steward-switch {
+  --switch-height: 1.125rem !important;
+  --switch-width: 2rem !important;
+  --switch-thumb-size: 0.875rem !important;
+  --switch-track-label-padding: 0.125rem !important;
+  --switch-radius: 999px !important;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.steward-switch .mantine-Switch-track {
+  display: inline-flex;
+  align-items: center;
+}
+
+.steward-switch .mantine-Switch-thumb {
+  top: calc((var(--switch-height) - var(--switch-thumb-size)) / 2);
 }
 
 .steward-switch[data-disabled='true'] {
@@ -831,6 +904,35 @@ html::-webkit-scrollbar-thumb:hover,
 
 .steward-slider .mantine-Slider-track::before {
   background-color: var(--companion-muted-surface);
+  transition: background-color 120ms ease;
+}
+
+.steward-slider .mantine-Slider-bar,
+.steward-slider .mantine-Slider-thumb {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease,
+    outline-color 120ms ease;
+}
+
+@media (hover: hover) {
+  [data-slot='slider']:hover .steward-slider .mantine-Slider-track::before {
+    background-color: color-mix(in srgb, var(--primary) 18%, var(--companion-muted-surface));
+  }
+
+  [data-slot='slider']:hover .steward-slider .mantine-Slider-bar {
+    background-color: color-mix(in srgb, var(--primary) 86%, var(--foreground)) !important;
+  }
+
+  [data-slot='slider']:hover .steward-slider .mantine-Slider-thumb {
+    border-color: var(--ring) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 18%, transparent);
+    filter: brightness(1.08);
+    outline: 1px solid color-mix(in srgb, var(--ring) 36%, transparent);
+    outline-offset: 1px;
+  }
 }
 
 .steward-choice-card {

@@ -16,7 +16,7 @@ import {
 } from '@/components/ui-kit';
 import type { RenderTreeNodePayload, TreeNodeData } from '@/components/ui-kit';
 import helpContent from '@/data/help-content.json';
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 interface HelpContent {
   version: number;
@@ -86,7 +86,7 @@ export function ModHelpPanel() {
       return (
         <div
           {...labelProps}
-          className={cn(
+          className={composeClassNames(
             className,
             'steward-tree-label flex min-w-0 items-center gap-2 px-2 py-1 text-sm',
             selected && 'font-medium',
@@ -101,7 +101,7 @@ export function ModHelpPanel() {
         >
           <IconChevronRight
             aria-hidden="true"
-            className={cn(
+            className={composeClassNames(
               'size-3.5 flex-none transition-transform',
               expanded && 'rotate-90',
               !hasChildren && 'opacity-0',

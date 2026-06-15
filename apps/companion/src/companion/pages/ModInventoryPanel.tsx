@@ -7,7 +7,7 @@ import type { RuntimeSets } from '@/companion/types';
 import { RuntimeUnavailable } from '@/companion/pages/shared';
 import { DENSE_CARD_HEADER_GRID, DENSE_TWO_COLUMN_GRID } from '@/companion/pages/shared-constants';
 import type { RecommendationDataSet } from '@/lib/recommendation-data';
-import type { IBeverage, IIngredient } from '@/lib/types';
+import type { BeverageCatalogItem, IngredientCatalogItem } from '@/lib/catalog-types';
 
 export function ModInventoryPanel({
   endpoint,
@@ -176,7 +176,7 @@ export function ModInventoryPanel({
   );
 }
 
-function InventoryEditColumn<TItem extends IIngredient | IBeverage>({
+function InventoryEditColumn<TItem extends IngredientCatalogItem | BeverageCatalogItem>({
   title,
   kind,
   items,
@@ -255,7 +255,7 @@ function InventoryEditColumn<TItem extends IIngredient | IBeverage>({
   );
 }
 
-function filterInventoryItems<TItem extends IIngredient | IBeverage>(items: TItem[], normalizedSearch: string): TItem[] {
+function filterInventoryItems<TItem extends IngredientCatalogItem | BeverageCatalogItem>(items: TItem[], normalizedSearch: string): TItem[] {
   const rows = normalizedSearch
     ? items.filter((item) => item.name.toLowerCase().includes(normalizedSearch) || String(item.id).includes(normalizedSearch))
     : items;

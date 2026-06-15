@@ -1,7 +1,7 @@
 import { Select as MantineSelect } from '@mantine/core';
 import type { SelectProps as MantineSelectProps } from '@mantine/core';
 
-import { cn } from '@/lib/utils';
+import { composeClassNames } from '@/components/ui/style';
 
 type SelectOption = {
   value: string;
@@ -43,11 +43,11 @@ function SelectBox({
       maxDropdownHeight={280}
       nothingFoundMessage="无匹配项"
       size={size}
-      className={cn('steward-select', className)}
+      className={composeClassNames('steward-select', className)}
       classNames={{
-        input: cn('steward-select-input', inputClassName),
-        dropdown: cn('steward-select-dropdown', dropdownClassName),
-        option: cn('steward-select-option', optionClassName),
+        input: composeClassNames('steward-select-input', inputClassName),
+        dropdown: composeClassNames('steward-select-dropdown', dropdownClassName),
+        option: composeClassNames('steward-select-option', optionClassName),
       }}
       comboboxProps={{
         withinPortal: true,

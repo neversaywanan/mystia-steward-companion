@@ -52,7 +52,7 @@ import {
   buildRecommendationDataIndexes,
   type RecommendationDataSet,
 } from '@/lib/recommendation-data';
-import type { IRareBeverageResult, IRareRecipeResult } from '@/lib/types';
+import type { RareBeverageRecommendation, RareRecipeRecommendation } from '@/recommendation-engine';
 
 const NORMAL_AUTO_RECOVERABLE_PAUSE_RETRY_MS = 10000;
 const DEFAULT_DATA_INDEXES = buildRecommendationDataIndexes(DEFAULT_RECOMMENDATION_DATA);
@@ -61,8 +61,8 @@ export type OrderPreparationSelection =
   | {
       ok: true;
       item: OrderRecommendation;
-      recipe: IRareRecipeResult | null;
-      beverage: IRareBeverageResult | null;
+      recipe: RareRecipeRecommendation | null;
+      beverage: RareBeverageRecommendation | null;
       recipeTarget: RareAutomationRecipeTarget | null;
       beverageTarget: RareAutomationBeverageTarget | null;
       recipeFavorite: FavoriteRecipeEntry | null;
@@ -756,7 +756,7 @@ function buildTrayResourceRows(diagnostics: RareAutoOrderDiagnostic[]): Automati
 
 function buildRareRecipeTarget(
   item: OrderRecommendation,
-  recipe: IRareRecipeResult,
+  recipe: RareRecipeRecommendation,
   favorite: FavoriteRecipeEntry | null,
   preferenceFallback = false,
 ): RareAutomationRecipeTarget {
@@ -777,7 +777,7 @@ function buildRareRecipeTarget(
 }
 
 function buildRareBeverageTarget(
-  beverage: IRareBeverageResult,
+  beverage: RareBeverageRecommendation,
   favorite: FavoriteBeverageEntry | null,
 ): RareAutomationBeverageTarget {
   return {
@@ -794,7 +794,7 @@ function uniqueNumbers(values: number[]): number[] {
 function formatRareAutomationRecipeName(
   stateTarget: RareAutomationRecipeTarget | null,
   selectionTarget: RareAutomationRecipeTarget | null,
-  selectedRecipe: IRareRecipeResult | null,
+  selectedRecipe: RareRecipeRecommendation | null,
 ): string {
   const target = stateTarget ?? selectionTarget;
   const name = target?.recipeName ?? selectedRecipe?.recipe.name ?? '';
@@ -892,8 +892,8 @@ function pickPlanForPreparation(
   favorites: FavoriteData,
   preferences: CompanionPreferences,
 ): {
-  recipe: IRareRecipeResult | null;
-  beverage: IRareBeverageResult | null;
+  recipe: RareRecipeRecommendation | null;
+  beverage: RareBeverageRecommendation | null;
   recipeFavorite: FavoriteRecipeEntry | null;
   beverageFavorite: FavoriteBeverageEntry | null;
   preferenceFallback: boolean;
@@ -953,7 +953,7 @@ function findRecipeRowForPlan(
   item: OrderRecommendation,
   recipeId: number,
   extraIngredientIds: number[],
-): IRareRecipeResult | null {
+): RareRecipeRecommendation | null {
   const normalizedExtras = normalizeIdList(extraIngredientIds).join(',');
   return [...item.recipes, ...item.preferenceRecipes].find((recipe) =>
     recipe.recipe.id === recipeId
@@ -964,7 +964,7 @@ function findRecipeRowForPlan(
 function findBeverageRowForPlan(
   item: OrderRecommendation,
   beverageId: number,
-): IRareBeverageResult | null {
+): RareBeverageRecommendation | null {
   return [...item.beverages, ...item.preferenceBeverages].find((beverage) =>
     beverage.beverage.id === beverageId
   ) ?? null;
