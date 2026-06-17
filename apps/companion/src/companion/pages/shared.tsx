@@ -4,6 +4,7 @@ import { CustomerCoverageBadges } from '@/components/recommendation/CustomerCove
 import { TagPill, TagPillGroup } from '@/components/recommendation/TagPillGroup';
 import { Badge, Button, EmptyRow, EmptyState, NumberInput, SegmentedControl, SliderField, SwitchField } from '@/components/ui-kit';
 import { findBeverageFavorite, findRecipeFavorite, beverageFavoriteKey, recipeFavoriteKey } from '@/companion/domain/favorites';
+import { INVENTORY_SORT_OPTIONS, type InventorySortMode } from '@/companion/domain/inventory-sorting';
 import { formatDesk, formatIngredientNamesWithQty, formatIngredientWithQty, formatQtySuffix } from '@/companion/formatters';
 import {
   MAX_FOCUS_RECOMMENDATION_ROWS,
@@ -275,6 +276,31 @@ export function SettingSegmentedControl<TValue extends string>({
   );
 }
 
+export function InventorySortControl({
+  value,
+  onChange,
+  disabled = false,
+  ariaLabel = '库存排序',
+  className = '',
+}: {
+  value: InventorySortMode;
+  onChange: (value: InventorySortMode) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  return (
+    <SegmentedControl<InventorySortMode>
+      value={value}
+      options={INVENTORY_SORT_OPTIONS}
+      onValueChange={onChange}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      className={`h-7 shrink-0 ${className}`.trim()}
+    />
+  );
+}
+
 export function PlaceToolbar({
   selectedPlace,
   detectedPlace,
@@ -388,15 +414,7 @@ export function OrderRecommendationPanel({
 }) {
   const visibleRecipes = item.recipes.slice(0, normalizeFocusRecommendationLimit(recipeLimit));
   const visibleBeverages = item.beverages.slice(0, normalizeFocusRecommendationLimit(beverageLimit));
-  const visiblePreferenceRecipes = visibleRecipes.length >= 3
-    ? []
-    : item.preferenceRecipes.slice(0, Math.max(0, normalizeFocusRecommendationLimit(recipeLimit) - visibleRecipes.length));
-  const visiblePreferenceBeverages = visibleBeverages.length >= 3
-    ? []
-    : item.preferenceBeverages.slice(0, Math.max(0, normalizeFocusRecommendationLimit(beverageLimit) - visibleBeverages.length));
-  const targetCookerName = visibleRecipes[0]?.recipe.cooker
-    ?? visiblePreferenceRecipes[0]?.recipe.cooker
-    ?? '';
+  const targetCookerName = visibleRecipes[0]?.recipe.cooker ?? '';
 
   return (
     <div className={compact ? 'rounded-md border border-border p-2' : 'rounded-md border border-border p-3'}>
@@ -425,7 +443,7 @@ export function OrderRecommendationPanel({
       <div className={compact ? `mt-2 ${DENSE_TWO_COLUMN_GRID_TIGHT}` : `mt-3 ${DENSE_TWO_COLUMN_GRID}`}>
         <div>
           <h3 className={compact ? 'mb-1 text-xs font-semibold' : 'mb-2 text-sm font-semibold'}>推荐料理</h3>
-          {visibleRecipes.length === 0 && <EmptyRow text="暂无满足点单的料理" />}
+          {visibleRecipes.length === 0 && <EmptyRow text="暂无可推荐料理" />}
           <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
             {visibleRecipes.map((recipe, index) => (
               <RecipeRecommendationRow
@@ -441,29 +459,12 @@ export function OrderRecommendationPanel({
                 onToggleFavorite={() => onToggleRecipeFavorite(item.customer, item.order.foodTag, recipe)}
               />
             ))}
-            {visiblePreferenceRecipes.length > 0 && (
-              <div className={compact ? 'pt-1' : 'pt-2'}>
-                <div className="mb-1 text-xs font-medium text-muted-foreground">喜好备选（不满足点单）</div>
-                <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
-                  {visiblePreferenceRecipes.map((recipe, index) => (
-                    <RecipeRecommendationRow
-                      key={`fallback-${recipe.recipe.id}-${index}`}
-                      recipe={recipe}
-                      index={visibleRecipes.length + index}
-                      ownedIngredientQty={runtimeSets?.ownedIngredientQty ?? {}}
-                      ingredientIdByName={dataIndexes.ingredientIdByName}
-                      compact={compact}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
         <div>
           <h3 className={compact ? 'mb-1 text-xs font-semibold' : 'mb-2 text-sm font-semibold'}>推荐酒水</h3>
-          {visibleBeverages.length === 0 && <EmptyRow text="暂无满足点单的酒水" />}
+          {visibleBeverages.length === 0 && <EmptyRow text="暂无可推荐酒水" />}
           <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
             {visibleBeverages.map((beverage, index) => (
               <BeverageRecommendationRow
@@ -478,22 +479,6 @@ export function OrderRecommendationPanel({
                 onToggleFavorite={() => onToggleBeverageFavorite(item.customer, item.order.beverageTag, beverage)}
               />
             ))}
-            {visiblePreferenceBeverages.length > 0 && (
-              <div className={compact ? 'pt-1' : 'pt-2'}>
-                <div className="mb-1 text-xs font-medium text-muted-foreground">喜好备选（不满足点单）</div>
-                <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
-                  {visiblePreferenceBeverages.map((beverage, index) => (
-                    <BeverageRecommendationRow
-                      key={`fallback-${beverage.beverage.id}`}
-                      beverage={beverage}
-                      index={visibleBeverages.length + index}
-                      ownedBeverageQty={runtimeSets?.ownedBeverageQty ?? {}}
-                      compact={compact}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -614,7 +599,11 @@ export function BeverageRecommendationRow({
       index={index}
       title={beverage.beverage.name}
       titleSuffix={formatQtySuffix(ownedBeverageQty[beverage.beverage.id])}
-      badges={beverage.meetsRequiredBev ? <Badge variant="secondary">满足点单</Badge> : undefined}
+      badges={(
+        <Badge variant={beverage.meetsRequiredBev ? 'secondary' : 'outline'}>
+          {beverage.meetsRequiredBev ? '满足点单' : '偏好备选'}
+        </Badge>
+      )}
       summary={`匹配 ${beverage.matchedTags.length} 项 · 价格 ${beverage.beverage.price}`}
       compact={compact}
       favorite={onToggleFavorite ? {

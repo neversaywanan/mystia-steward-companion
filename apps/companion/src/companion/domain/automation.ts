@@ -57,7 +57,7 @@ import type { RareBeverageRecommendation, RareRecipeRecommendation } from '@/rec
 const NORMAL_AUTO_RECOVERABLE_PAUSE_RETRY_MS = 10000;
 const DEFAULT_DATA_INDEXES = buildRecommendationDataIndexes(DEFAULT_RECOMMENDATION_DATA);
 
-export type OrderPreparationSelection =
+type OrderPreparationSelection =
   | {
       ok: true;
       item: OrderRecommendation;
@@ -955,7 +955,7 @@ function findRecipeRowForPlan(
   extraIngredientIds: number[],
 ): RareRecipeRecommendation | null {
   const normalizedExtras = normalizeIdList(extraIngredientIds).join(',');
-  return [...item.recipes, ...item.preferenceRecipes].find((recipe) =>
+  return item.recipes.find((recipe) =>
     recipe.recipe.id === recipeId
     && normalizeIdList(recipe.extraIngredients.map((ingredient) => ingredient.id)).join(',') === normalizedExtras
   ) ?? null;
@@ -965,7 +965,7 @@ function findBeverageRowForPlan(
   item: OrderRecommendation,
   beverageId: number,
 ): RareBeverageRecommendation | null {
-  return [...item.beverages, ...item.preferenceBeverages].find((beverage) =>
+  return item.beverages.find((beverage) =>
     beverage.beverage.id === beverageId
   ) ?? null;
 }

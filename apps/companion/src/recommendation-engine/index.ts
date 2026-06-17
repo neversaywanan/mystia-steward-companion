@@ -10,6 +10,8 @@ export {
   buildRareFoodCandidates,
   buildRareOrderPlans,
   buildRareOrderPlansFromCandidates,
+  compareBeverageCandidates,
+  compareFoodCandidates,
   sortRareOrderPlans,
 } from '@/recommendation-engine/rare-orders';
 export {
@@ -51,7 +53,6 @@ export type {
   NormalCoverageRuntimeContext,
 } from '@/recommendation-engine/normal-coverage';
 export type {
-  RecommendationBucketPolicy,
   RecommendationObjectiveDefinition,
   RecommendationObjectiveDirection,
   RecommendationObjectiveKey,

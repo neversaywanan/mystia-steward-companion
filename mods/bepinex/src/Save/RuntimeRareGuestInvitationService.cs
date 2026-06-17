@@ -395,10 +395,47 @@ internal static class RuntimeRareGuestInvitationService
     {
         return candidates
             .GroupBy(candidate => candidate.Id >= 0 ? $"id:{candidate.Id}" : $"name:{candidate.RuntimeName}", StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+            .Select(MergeCandidateGroup)
             .OrderBy(candidate => candidate.Id < 0 ? int.MaxValue : candidate.Id)
             .ThenBy(candidate => candidate.RuntimeName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static InviteCandidate MergeCandidateGroup(IGrouping<string, InviteCandidate> group)
+    {
+        var items = group.ToList();
+        var best = items
+            .OrderByDescending(candidate => candidate.IsCurrentScene && candidate.RuntimeAvailable)
+            .ThenByDescending(candidate => candidate.RuntimeAvailable)
+            .ThenBy(candidate => candidate.AvailabilityKnown && !candidate.RuntimeAvailable ? 1 : 0)
+            .ThenByDescending(candidate => candidate.SceneLabels.Count + candidate.SceneNames.Count)
+            .ThenBy(candidate => candidate.RuntimeName, StringComparer.OrdinalIgnoreCase)
+            .First();
+
+        var sceneLabels = items
+            .SelectMany(candidate => candidate.SceneLabels)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var sceneNames = items
+            .SelectMany(candidate => candidate.SceneNames)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToList();
+        var knownCandidates = items.Where(candidate => candidate.AvailabilityKnown).ToList();
+        var runtimeAvailable = knownCandidates.Count == 0 || knownCandidates.Any(candidate => candidate.RuntimeAvailable);
+
+        return best with
+        {
+            Source = string.Join("+", items.Select(candidate => candidate.Source).Distinct(StringComparer.Ordinal)),
+            SceneLabels = sceneLabels,
+            SceneNames = sceneNames,
+            IsCurrentScene = items.Any(candidate => candidate.IsCurrentScene),
+            AvailabilityKnown = knownCandidates.Count > 0,
+            RuntimeAvailable = runtimeAvailable,
+        };
     }
 
     private static InviteCandidate? BuildCandidate(RuntimeMappedGuestCatalog? catalog, object guest, InviteCandidateRecord record)
@@ -473,7 +510,7 @@ internal static class RuntimeRareGuestInvitationService
         var staticMap = 0;
         var staticUnavailable = 0;
         var keyDiagnostics = "";
-        foreach (var record in ReadStaticMapNpcRecords(runtimeDaySceneType, dataBaseDayType, currentMapLabel, currentOnly: true, errors: errors, out staticMap, out staticUnavailable, out keyDiagnostics))
+        foreach (var record in ReadStaticMapNpcRecords(runtimeDaySceneType, dataBaseDayType, currentMapLabel, currentOnly: true, evaluateRuntimeAvailability: true, errors: errors, out staticMap, out staticUnavailable, out keyDiagnostics))
         {
             counts["staticMap"]++;
             records.Add(record);
@@ -488,17 +525,31 @@ internal static class RuntimeRareGuestInvitationService
 
     private static IReadOnlyList<InviteCandidateRecord> ReadAllDaySceneNpcRecords(DaySceneMapInfo currentMap, out string diagnostics)
     {
-        var runtimeDaySceneType = RuntimeReflectionUtility.FindType(RuntimeDaySceneTypeName);
         var dataBaseDayType = RuntimeReflectionUtility.FindType(DataBaseDayTypeName);
-        TryRefreshCurrentMapNpcs(runtimeDaySceneType);
         var errors = new List<string>();
         var staticMap = 0;
-        var staticUnavailable = 0;
         var keyDiagnostics = "";
-        var records = ReadStaticMapNpcRecords(runtimeDaySceneType, dataBaseDayType, currentMap.Label, currentOnly: false, errors: errors, out staticMap, out staticUnavailable, out keyDiagnostics);
+        var currentRecords = ReadCurrentDaySceneNpcRecords(currentMap, out var currentDiagnostics)
+            .Select(ConvertToAllScenesRecord)
+            .ToList();
+        var records = ReadStaticMapNpcRecords(null, dataBaseDayType, currentMap.Label, currentOnly: false, evaluateRuntimeAvailability: false, errors: errors, out staticMap, out _, out keyDiagnostics)
+            .Concat(currentRecords)
+            .ToList();
         var errorText = errors.Count == 0 ? "" : $"; errors={string.Join("|", errors.Take(4))}";
-        diagnostics = $"currentMap={currentMap.Label}; allScenes=1; staticMap={staticMap}; staticAccepted={records.Count}; staticUnavailable={staticUnavailable}; {keyDiagnostics}{errorText}";
+        diagnostics = $"currentMap={currentMap.Label}; allScenes=1; staticMap={staticMap}; staticAccepted={records.Count - currentRecords.Count}; staticRuntimeAvailability=not-applied; currentOverlay={currentRecords.Count}; currentOverlayDiagnostics=({currentDiagnostics}); {keyDiagnostics}{errorText}";
         return DeduplicateRecords(records);
+    }
+
+    private static InviteCandidateRecord ConvertToAllScenesRecord(InviteCandidateRecord record)
+    {
+        if (!record.AvailabilityKnown || record.RuntimeAvailable) return record;
+
+        return record with
+        {
+            AvailabilityKnown = false,
+            RuntimeAvailable = true,
+            Source = $"{record.Source}:allScenesCandidate",
+        };
     }
 
     private static void TryRefreshCurrentMapNpcs(Type? runtimeDaySceneType)
@@ -655,6 +706,7 @@ internal static class RuntimeRareGuestInvitationService
         Type? dataBaseDayType,
         string currentMapLabel,
         bool currentOnly,
+        bool evaluateRuntimeAvailability,
         List<string> errors,
         out int staticMap,
         out int staticUnavailable,
@@ -684,7 +736,7 @@ internal static class RuntimeRareGuestInvitationService
 
             var available = true;
             var known = false;
-            if (runtimeDaySceneType != null)
+            if (evaluateRuntimeAvailability && runtimeDaySceneType != null)
             {
                 available = IsTrackedNpcAvailable(runtimeDaySceneType, key, out known);
                 if (known && !available) staticUnavailable++;

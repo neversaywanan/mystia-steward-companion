@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { IconRefresh } from '@tabler/icons-react';
-import { Badge, Button, Card, CardContent, EmptyRow, InfoLine, ListPanel, SegmentedControl } from '@/components/ui-kit';
+import { Badge, Button, Card, CardContent, EmptyRow, InfoLine, Input, ListPanel, SegmentedControl } from '@/components/ui-kit';
 import { toggleNumberInList } from '@/companion/storage';
 import type { MissionStatusFilter, RareGuestInvitationEntry, RareGuestInvitationResponse, RareGuestInvitationScope, RuntimeMissionContext, RuntimeMissionInfo } from '@/companion/types';
 import { RuntimeUnavailable } from '@/companion/pages/shared';
@@ -41,14 +41,20 @@ function RareGuestInvitationPanel({
   onInviteAllRareGuests: () => void;
   onInviteRareGuest: (guestId: number) => void;
 }) {
+  const [inviteSearch, setInviteSearch] = useState('');
   const availableEntries = inviteAllResult?.available ?? [];
   const sourceEntries = inviteAllResult?.candidates?.length ? inviteAllResult.candidates : availableEntries;
+  const normalizedInviteSearch = normalizeSearchText(inviteSearch);
   const levelOptions = getInvitationKizunaLevelOptions(sourceEntries);
-  const candidateEntries = sourceEntries
+  const levelMatchedCandidateEntries = sourceEntries
     .filter((entry) => matchesInvitationKizunaLevels(entry, inviteLevels))
+    .slice();
+  const candidateEntries = levelMatchedCandidateEntries
+    .filter((entry) => matchesInvitationSearch(entry, normalizedInviteSearch))
     .slice()
     .sort(compareInvitationEntries);
   const filteredAvailableEntries = availableEntries.filter((entry) => matchesInvitationKizunaLevels(entry, inviteLevels));
+  const visibleAvailableEntries = filteredAvailableEntries.filter((entry) => matchesInvitationSearch(entry, normalizedInviteSearch));
   const currentInvitedEntries = inviteAllResult
     ? deduplicateInvitationEntries([
       ...(inviteAllResult.existingInvited ?? []),
@@ -56,6 +62,7 @@ function RareGuestInvitationPanel({
       ...sourceEntries.filter((entry) => entry.status === 'invited'),
     ])
       .filter((entry) => matchesInvitationKizunaLevels(entry, inviteLevels))
+      .filter((entry) => matchesInvitationSearch(entry, normalizedInviteSearch))
       .sort(compareInvitationEntries)
     : [];
   const skippedEntries = inviteAllResult?.skipped.filter((entry) => entry.status !== 'invited') ?? [];
@@ -66,7 +73,7 @@ function RareGuestInvitationPanel({
 
   return (
     <ListPanel
-      title={`稀客邀请 (${filteredAvailableEntries.length}/${candidateEntries.length})`}
+      title={`稀客邀请 (${visibleAvailableEntries.length}/${candidateEntries.length})`}
       action={(
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
           <SegmentedControl<RareGuestInvitationScope>
@@ -100,12 +107,27 @@ function RareGuestInvitationPanel({
           <InfoLine label="范围" value={inviteScope === 'all' ? '所有日间场景' : `当前: ${currentMapText}`} />
           <InfoLine label="状态" value={runtimeLoaded ? '按原生羁绊条件判定' : '等待存档加载'} />
         </div>
-        {inviteAllError && <EmptyRow text={inviteAllError} />}
+        {!inviteAllResult && inviteAllError && <EmptyRow text={inviteAllError} />}
         {inviteAllResult ? (
           <div className="max-w-full min-w-0 overflow-hidden rounded-sm steward-muted-surface-25 p-2">
             <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-              <span className="truncate">新增 {inviteAllResult.invitedCount} · 可邀请 {filteredAvailableEntries.length} · 候选 {candidateEntries.length}</span>
+              <span className="truncate">
+                新增 {inviteAllResult.invitedCount}
+                {' · '}
+                可邀请 {formatFilteredCount(visibleAvailableEntries.length, filteredAvailableEntries.length)}
+                {' · '}
+                候选 {formatFilteredCount(candidateEntries.length, levelMatchedCandidateEntries.length)}
+              </span>
               <span className="truncate sm:text-right">{inviteAllResult.status || (inviteAllResult.ok ? '已完成' : '失败')}</span>
+            </div>
+            <div className="mt-2">
+              <Input
+                value={inviteSearch}
+                onChange={(event) => setInviteSearch(event.target.value)}
+                placeholder="搜索稀客名称"
+                className="w-full sm:w-56"
+                aria-label="搜索稀客邀请候选"
+              />
             </div>
             {levelOptions.length > 0 && (
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -179,7 +201,7 @@ function RareGuestInvitationPanel({
                 );
               })}
               {candidateEntries.length === 0 && (
-                <EmptyRow text={isListBusy ? '正在读取稀客候选' : inviteScope === 'all' ? '暂无稀客候选' : '当前场景暂无稀客候选'} />
+                <EmptyRow text={getInvitationEmptyText(isListBusy, inviteScope, normalizedInviteSearch)} />
               )}
             </div>
             {currentInvitedEntries.length > 0 && (
@@ -374,6 +396,16 @@ export function ModTasksPanel({
   );
 }
 
+function formatFilteredCount(visibleCount: number, totalCount: number): string {
+  return visibleCount === totalCount ? String(totalCount) : `${visibleCount}/${totalCount}`;
+}
+
+function getInvitationEmptyText(isListBusy: boolean, inviteScope: RareGuestInvitationScope, normalizedSearch: string): string {
+  if (isListBusy) return '正在读取稀客候选';
+  if (normalizedSearch) return '没有匹配的稀客候选';
+  return inviteScope === 'all' ? '暂无稀客候选' : '当前场景暂无稀客候选';
+}
+
 function summarizeInvitationSkipped(entries: RareGuestInvitationEntry[]): string {
   const counts = new Map<string, number>();
   for (const entry of entries) {
@@ -432,6 +464,31 @@ function getInvitationKizunaLevelOptions(entries: RareGuestInvitationEntry[]): n
 function matchesInvitationKizunaLevels(entry: RareGuestInvitationEntry, levels: number[]): boolean {
   if (levels.length === 0) return true;
   return levels.includes(normalizeInvitationKizunaLevel(entry));
+}
+
+function matchesInvitationSearch(entry: RareGuestInvitationEntry, normalizedSearch: string): boolean {
+  if (!normalizedSearch) return true;
+  const text = normalizeSearchText([
+    entry.name,
+    entry.runtimeName,
+    entry.id >= 0 ? `#${entry.id}` : '',
+    entry.id >= 0 ? String(entry.id) : '',
+  ].filter(Boolean).join(' '));
+  return text.includes(normalizedSearch) || isOrderedFuzzyMatch(normalizedSearch, text);
+}
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLocaleLowerCase('zh-Hans-CN').replace(/\s+/g, '');
+}
+
+function isOrderedFuzzyMatch(needle: string, haystack: string): boolean {
+  if (!needle) return true;
+  let index = 0;
+  for (const char of haystack) {
+    if (char === needle[index]) index++;
+    if (index === needle.length) return true;
+  }
+  return false;
 }
 
 function formatInvitationScenes(entry: RareGuestInvitationEntry): string {

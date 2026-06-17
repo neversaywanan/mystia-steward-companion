@@ -1,10 +1,7 @@
 export type RecommendationSortPresetId = 'balanced' | 'resources' | 'profit' | 'simple';
-export type RecommendationBucketPolicy = 'strict' | 'allowPreferenceFallback';
 export type RecommendationObjectiveDirection = 'asc' | 'desc';
 
 export type RecommendationObjectiveKey =
-  | 'mission'
-  | 'favorite'
   | 'foodPreference'
   | 'beveragePreference'
   | 'negativeRisk'
@@ -31,7 +28,6 @@ export interface RecommendationObjectiveRule {
 
 export interface RecommendationSortProfile {
   preset: RecommendationSortPresetId;
-  bucketPolicy: RecommendationBucketPolicy;
   objectives: RecommendationObjectiveRule[];
 }
 
@@ -39,6 +35,9 @@ export interface RecommendationPlanSortContext {
   favoriteRecipeKeys?: Set<string>;
   favoriteBeverageIds?: Set<number>;
   missionRecipeId?: number | null;
+  pinMissionRecipe?: boolean;
+  pinFavoriteRecipe?: boolean;
+  pinFavoriteBeverage?: boolean;
 }
 
 export interface RecommendationSortPreset {
@@ -48,18 +47,6 @@ export interface RecommendationSortPreset {
 }
 
 export const RECOMMENDATION_OBJECTIVE_DEFINITIONS: RecommendationObjectiveDefinition[] = [
-  {
-    key: 'mission',
-    label: '优先任务料理',
-    description: '当前订单命中投喂任务料理时靠前。',
-    direction: 'desc',
-  },
-  {
-    key: 'favorite',
-    label: '优先收藏方案',
-    description: '已收藏的料理方案或酒水靠前。',
-    direction: 'desc',
-  },
   {
     key: 'foodPreference',
     label: '料理偏好命中',
@@ -150,9 +137,6 @@ export function normalizeRecommendationSortProfile(value: unknown): Recommendati
   const record = isRecord(value) ? value : {};
   const preset = isRecommendationSortPresetId(record.preset) ? record.preset : 'balanced';
   const baseProfile = buildRecommendationSortProfile(preset);
-  const bucketPolicy = record.bucketPolicy === 'allowPreferenceFallback'
-    ? 'allowPreferenceFallback'
-    : baseProfile.bucketPolicy;
   const overrides = Array.isArray(record.objectives) ? record.objectives : [];
   const overrideByKey = new Map<string, Record<string, unknown>>();
 
@@ -163,7 +147,6 @@ export function normalizeRecommendationSortProfile(value: unknown): Recommendati
 
   return {
     preset,
-    bucketPolicy,
     objectives: baseProfile.objectives.map((rule) => {
       const override = overrideByKey.get(rule.key);
       return {
@@ -182,7 +165,6 @@ export function serializeRecommendationSortProfile(profile: RecommendationSortPr
   const normalized = normalizeRecommendationSortProfile(profile);
   return JSON.stringify({
     preset: normalized.preset,
-    bucketPolicy: normalized.bucketPolicy,
     objectives: normalized.objectives,
   });
 }
@@ -190,7 +172,6 @@ export function serializeRecommendationSortProfile(profile: RecommendationSortPr
 function buildRecommendationSortProfile(preset: RecommendationSortPresetId): RecommendationSortProfile {
   return {
     preset,
-    bucketPolicy: 'strict',
     objectives: RECOMMENDATION_OBJECTIVE_DEFINITIONS.map((definition) => ({
       key: definition.key,
       enabled: true,
@@ -206,8 +187,6 @@ function getPresetWeight(
 ): number {
   const weights: Record<RecommendationSortPresetId, Record<RecommendationObjectiveKey, number>> = {
     balanced: {
-      mission: 100,
-      favorite: 90,
       foodPreference: 70,
       beveragePreference: 60,
       negativeRisk: 90,
@@ -219,8 +198,6 @@ function getPresetWeight(
       cookerAvailable: 60,
     },
     resources: {
-      mission: 100,
-      favorite: 70,
       foodPreference: 55,
       beveragePreference: 45,
       negativeRisk: 90,
@@ -232,8 +209,6 @@ function getPresetWeight(
       cookerAvailable: 60,
     },
     profit: {
-      mission: 100,
-      favorite: 55,
       foodPreference: 60,
       beveragePreference: 50,
       negativeRisk: 85,
@@ -245,8 +220,6 @@ function getPresetWeight(
       cookerAvailable: 50,
     },
     simple: {
-      mission: 100,
-      favorite: 80,
       foodPreference: 50,
       beveragePreference: 45,
       negativeRisk: 90,

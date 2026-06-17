@@ -11,7 +11,6 @@ import {
   type RecommendationDataSet,
 } from '@/lib/recommendation-data';
 import type { RecipeCatalogItem } from '@/lib/catalog-types';
-import type { RareRecipeRecommendation } from '@/recommendation-engine';
 
 const COOKER_TYPE_NAME_BY_ID = new Map<number, string>([
   [1, '煮锅'],
@@ -108,7 +107,7 @@ export function getNormalCookerRequirement(
   return getRecipeCookerRequirement(recipe);
 }
 
-export function getRecipeCookerRequirement(recipe: RecipeCatalogItem | null | undefined): CookerRequirement | null {
+function getRecipeCookerRequirement(recipe: RecipeCatalogItem | null | undefined): CookerRequirement | null {
   const key = normalizeCookerName(recipe?.cooker);
   if (!key) return null;
   return {
@@ -117,7 +116,7 @@ export function getRecipeCookerRequirement(recipe: RecipeCatalogItem | null | un
   };
 }
 
-export function getNormalOrderRecipe(
+function getNormalOrderRecipe(
   order: NormalBusinessOrder,
   data: RecommendationDataSet = DEFAULT_RECOMMENDATION_DATA,
 ): RecipeCatalogItem | null {
@@ -125,17 +124,6 @@ export function getNormalOrderRecipe(
   return indexes.recipeByFoodId.get(order.foodId)
     ?? data.recipes.find((item) => item.recipeId === order.foodId)
     ?? null;
-}
-
-export function shouldKeepRecipeForCooker(
-  recipe: RareRecipeRecommendation,
-  runtimeSets: RuntimeSets | null,
-  filterMissingCookers: boolean,
-): boolean {
-  if (!filterMissingCookers || !runtimeSets?.hasCookerSnapshot) return true;
-  const requiredCooker = normalizeCookerName(recipe.recipe.cooker);
-  if (!requiredCooker) return true;
-  return runtimeSets.placedCookerNames.has(requiredCooker);
 }
 
 export function resolveCookerTypeId(value: string | null | undefined): number {
@@ -149,7 +137,7 @@ export function resolveCookerTypeId(value: string | null | undefined): number {
   return -1;
 }
 
-export function normalizeCookerName(value: string | null | undefined): string {
+function normalizeCookerName(value: string | null | undefined): string {
   const normalized = (value ?? '').trim();
   if (!normalized) return '';
   return COOKER_NAME_ALIASES.get(normalized) ?? normalized;

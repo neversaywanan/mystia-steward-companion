@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IconRefresh } from '@tabler/icons-react';
 import { Button, InfoLine, ListPanel, MultiSelectBox, NumberInput, Slider, SwitchField, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui-kit';
 import { readLogSettings, writeLogSettings } from '@/companion/api';
+import { buildInventorySelectOptions, type InventorySortMode } from '@/companion/domain/inventory-sorting';
 import {
   MAX_RECIPE_VARIANT_LIMIT_PER_BASE,
   MAX_AUTO_ROLLBACKS_LIMIT,
@@ -17,14 +18,13 @@ import {
   normalizeRecipeVariantLimitPerBase,
   type CompanionPreferences,
 } from '@/companion/preferences';
-import type { LocalApiLogSettings, SettingsTab } from '@/companion/types';
+import type { LocalApiLogSettings, RuntimeSets, SettingsTab } from '@/companion/types';
 import type { RecommendationDataSet } from '@/lib/recommendation-data';
 import type { ThemeMode } from '@/lib/theme';
 import {
   RECOMMENDATION_OBJECTIVE_DEFINITIONS,
   RECOMMENDATION_SORT_PRESETS,
   buildDefaultRecommendationSortProfile,
-  type RecommendationBucketPolicy,
   type RecommendationObjectiveKey,
   type RecommendationSortPresetId,
   type RecommendationSortProfile,
@@ -34,6 +34,7 @@ import {
   BackgroundOpacitySlider,
   ContentOpacitySlider,
   FocusSwitchCooldownInput,
+  InventorySortControl,
   SettingSegmentedControl,
   SwitchControl,
 } from '@/companion/pages/shared';
@@ -44,6 +45,7 @@ export function ModSettingsPanel({
   apiToken,
   preferences,
   data,
+  runtimeSets,
   themeMode,
   serviceFocusCompact,
   onPreferenceChange,
@@ -54,6 +56,7 @@ export function ModSettingsPanel({
   apiToken: string;
   preferences: CompanionPreferences;
   data: RecommendationDataSet;
+  runtimeSets: RuntimeSets | null;
   themeMode: ThemeMode;
   serviceFocusCompact: boolean;
   onPreferenceChange: (next: Partial<CompanionPreferences>) => void;
@@ -64,17 +67,23 @@ export function ModSettingsPanel({
   const [consoleBusy, setConsoleBusy] = useState(false);
   const [consoleError, setConsoleError] = useState('');
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('window');
+  const [ingredientExclusionSortMode, setIngredientExclusionSortMode] = useState<InventorySortMode>('name');
+  const [beverageExclusionSortMode, setBeverageExclusionSortMode] = useState<InventorySortMode>('name');
   const ingredientOptions = useMemo(
-    () => data.ingredients
-      .map((ingredient) => ({ value: String(ingredient.id), label: ingredient.name }))
-      .sort((left, right) => left.label.localeCompare(right.label, 'zh-Hans-CN')),
-    [data.ingredients],
+    () => buildInventorySelectOptions(
+      data.ingredients,
+      runtimeSets?.ownedIngredientQty ?? null,
+      ingredientExclusionSortMode,
+    ),
+    [data.ingredients, ingredientExclusionSortMode, runtimeSets?.ownedIngredientQty],
   );
   const beverageOptions = useMemo(
-    () => data.beverages
-      .map((beverage) => ({ value: String(beverage.id), label: beverage.name }))
-      .sort((left, right) => left.label.localeCompare(right.label, 'zh-Hans-CN')),
-    [data.beverages],
+    () => buildInventorySelectOptions(
+      data.beverages,
+      runtimeSets?.ownedBeverageQty ?? null,
+      beverageExclusionSortMode,
+    ),
+    [beverageExclusionSortMode, data.beverages, runtimeSets?.ownedBeverageQty],
   );
 
   const updateExclusions = useCallback((next: Partial<CompanionPreferences['recommendationExclusions']>) => {
@@ -247,7 +256,7 @@ export function ModSettingsPanel({
 
       <TabsContent value="recommendation" className="space-y-4">
         <div className={DENSE_TWO_COLUMN_GRID}>
-          <ListPanel title="推荐">
+          <ListPanel title="推荐设置">
             <div className="space-y-4">
               <SettingSegmentedControl
                 label="经营中订单排序"
@@ -274,19 +283,6 @@ export function ModSettingsPanel({
               <div className="text-xs text-muted-foreground">
                 经营中有推荐目标厨具时，尝试让对应已摆放厨具显示黄色脉冲高亮；只改变可见提示，不自动操作厨具。
               </div>
-            </div>
-          </ListPanel>
-
-          <ListPanel title="推荐权重">
-            <RecommendationSortProfileControl
-              profile={preferences.recommendationSortProfile}
-              filterMissingCookers={preferences.filterMissingCookers}
-              onChange={(recommendationSortProfile) => onPreferenceChange({ recommendationSortProfile })}
-            />
-          </ListPanel>
-
-          <ListPanel title="推荐约束">
-            <div className="space-y-4">
               <SettingSegmentedControl
                 label="预算处理"
                 value={preferences.recommendationBudgetPolicy}
@@ -305,6 +301,24 @@ export function ModSettingsPanel({
               <div className="text-xs text-muted-foreground">
                 进入经营场景后，若读取到已摆放厨具，推荐列表会隐藏当前场景无法制作的料理。
               </div>
+              <SwitchControl
+                label="任务料理置顶"
+                checked={preferences.pinMissionRecipeEnabled}
+                onCheckedChange={(pinMissionRecipeEnabled) => onPreferenceChange({ pinMissionRecipeEnabled })}
+              />
+              <SwitchControl
+                label="收藏料理置顶"
+                checked={preferences.pinFavoriteRecipeEnabled}
+                onCheckedChange={(pinFavoriteRecipeEnabled) => onPreferenceChange({ pinFavoriteRecipeEnabled })}
+              />
+              <SwitchControl
+                label="收藏酒水置顶"
+                checked={preferences.pinFavoriteBeverageEnabled}
+                onCheckedChange={(pinFavoriteBeverageEnabled) => onPreferenceChange({ pinFavoriteBeverageEnabled })}
+              />
+              <div className="text-xs text-muted-foreground">
+                置顶只在解锁、库存、预算和厨具等硬条件通过后生效；任务料理优先于收藏料理，收藏酒水独立影响酒水排序。
+              </div>
               <label className="flex items-center justify-between gap-3 text-sm">
                 <span className="min-w-0 text-muted-foreground">同基础料理显示</span>
                 <NumberInput
@@ -321,7 +335,15 @@ export function ModSettingsPanel({
                 同一道基础料理只保留当前排序最靠前的指定数量，加料不同但排序靠后的变体会隐藏。
               </div>
               <div className="space-y-2">
-                <div className="text-sm font-medium">排除材料</div>
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="text-sm font-medium">排除材料</div>
+                  <InventorySortControl
+                    value={ingredientExclusionSortMode}
+                    onChange={setIngredientExclusionSortMode}
+                    disabled={ingredientOptions.length === 0}
+                    aria-label="排除材料排序"
+                  />
+                </div>
                 <MultiSelectBox
                   value={preferences.recommendationExclusions.excludedIngredientIds.map(String)}
                   options={ingredientOptions}
@@ -334,7 +356,15 @@ export function ModSettingsPanel({
                 </div>
               </div>
               <div className="space-y-2">
-                <div className="text-sm font-medium">排除酒水</div>
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="text-sm font-medium">排除酒水</div>
+                  <InventorySortControl
+                    value={beverageExclusionSortMode}
+                    onChange={setBeverageExclusionSortMode}
+                    disabled={beverageOptions.length === 0}
+                    aria-label="排除酒水排序"
+                  />
+                </div>
                 <MultiSelectBox
                   value={preferences.recommendationExclusions.excludedBeverageIds.map(String)}
                   options={beverageOptions}
@@ -359,6 +389,14 @@ export function ModSettingsPanel({
                 清空排除
               </Button>
             </div>
+          </ListPanel>
+
+          <ListPanel title="推荐权重">
+            <RecommendationSortProfileControl
+              profile={preferences.recommendationSortProfile}
+              filterMissingCookers={preferences.filterMissingCookers}
+              onChange={(recommendationSortProfile) => onPreferenceChange({ recommendationSortProfile })}
+            />
           </ListPanel>
         </div>
       </TabsContent>
@@ -500,15 +538,6 @@ function RecommendationSortProfileControl({
           label: preset.label,
         }))}
         onChange={(preset: RecommendationSortPresetId) => onChange(buildDefaultRecommendationSortProfile(preset))}
-      />
-      <SettingSegmentedControl
-        label="兜底策略"
-        value={profile.bucketPolicy}
-        options={[
-          { value: 'strict', label: '严格点单' },
-          { value: 'allowPreferenceFallback', label: '允许偏好兜底' },
-        ]}
-        onChange={(bucketPolicy: RecommendationBucketPolicy) => onChange({ ...profile, bucketPolicy })}
       />
       <div className="space-y-2">
         {RECOMMENDATION_OBJECTIVE_DEFINITIONS.map((definition) => {

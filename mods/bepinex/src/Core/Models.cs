@@ -125,30 +125,6 @@ public sealed class RuntimeRareCustomer
     }
 }
 
-public sealed class CustomerScore
-{
-    public string Name { get; init; } = "";
-    public int Score { get; init; }
-}
-
-public sealed class NormalRecipeResult
-{
-    public Recipe Recipe { get; init; } = new();
-    public List<CustomerScore> CustomerScores { get; init; } = new();
-    public int TotalCoverage { get; init; }
-    public int Profit { get; init; }
-    public int IngredientCost { get; init; }
-    public List<string> MatchedTags { get; init; } = new();
-}
-
-public sealed class NormalBeverageResult
-{
-    public Beverage Beverage { get; init; } = new();
-    public List<CustomerScore> CustomerScores { get; init; } = new();
-    public int TotalCoverage { get; init; }
-    public List<string> MatchedTags { get; init; } = new();
-}
-
 public sealed class NightBusinessOrder
 {
     public int DeskCode { get; init; }

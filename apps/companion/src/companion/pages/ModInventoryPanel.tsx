@@ -2,9 +2,14 @@ import { useCallback, useMemo, useState } from 'react';
 import { IconRefresh } from '@tabler/icons-react';
 import { Button, Card, CardContent, EmptyRow, Input, ListPanel } from '@/components/ui-kit';
 import { writeInventoryBulkQuantity, writeInventoryQuantity } from '@/companion/api';
+import {
+  formatInventoryQuantity,
+  sortInventoryItems,
+  type InventorySortMode,
+} from '@/companion/domain/inventory-sorting';
 import { normalizeEditableQuantity } from '@/companion/preferences';
 import type { RuntimeSets } from '@/companion/types';
-import { RuntimeUnavailable } from '@/companion/pages/shared';
+import { InventorySortControl, RuntimeUnavailable } from '@/companion/pages/shared';
 import { DENSE_CARD_HEADER_GRID, DENSE_TWO_COLUMN_GRID } from '@/companion/pages/shared-constants';
 import type { RecommendationDataSet } from '@/lib/recommendation-data';
 import type { BeverageCatalogItem, IngredientCatalogItem } from '@/lib/catalog-types';
@@ -25,17 +30,29 @@ export function ModInventoryPanel({
   onRefresh: () => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
+  const [ingredientSortMode, setIngredientSortMode] = useState<InventorySortMode>('name');
+  const [beverageSortMode, setBeverageSortMode] = useState<InventorySortMode>('name');
   const [busyKey, setBusyKey] = useState('');
   const [message, setMessage] = useState('');
 
-  const normalizedSearch = search.trim().toLowerCase();
+  const normalizedSearch = search.trim().toLocaleLowerCase('zh-Hans-CN');
   const ingredientRows = useMemo(
-    () => filterInventoryItems(data.ingredients, normalizedSearch),
-    [data.ingredients, normalizedSearch],
+    () => filterInventoryItems(
+      data.ingredients,
+      normalizedSearch,
+      runtimeSets?.ownedIngredientQty ?? null,
+      ingredientSortMode,
+    ),
+    [data.ingredients, ingredientSortMode, normalizedSearch, runtimeSets?.ownedIngredientQty],
   );
   const beverageRows = useMemo(
-    () => filterInventoryItems(data.beverages.filter((beverage) => beverage.id >= 0), normalizedSearch),
-    [data.beverages, normalizedSearch],
+    () => filterInventoryItems(
+      data.beverages,
+      normalizedSearch,
+      runtimeSets?.ownedBeverageQty ?? null,
+      beverageSortMode,
+    ),
+    [beverageSortMode, data.beverages, normalizedSearch, runtimeSets?.ownedBeverageQty],
   );
   const bulkIngredientIds = useMemo(
     () => runtimeSets
@@ -158,6 +175,8 @@ export function ModInventoryPanel({
           kind="ingredient"
           items={ingredientRows}
           ownedQty={runtimeSets.ownedIngredientQty}
+          sortMode={ingredientSortMode}
+          onSortModeChange={setIngredientSortMode}
           busyKey={busyKey}
           apiToken={apiToken}
           onApply={applyQuantity}
@@ -167,6 +186,8 @@ export function ModInventoryPanel({
           kind="beverage"
           items={beverageRows}
           ownedQty={runtimeSets.ownedBeverageQty}
+          sortMode={beverageSortMode}
+          onSortModeChange={setBeverageSortMode}
           busyKey={busyKey}
           apiToken={apiToken}
           onApply={applyQuantity}
@@ -181,6 +202,8 @@ function InventoryEditColumn<TItem extends IngredientCatalogItem | BeverageCatal
   kind,
   items,
   ownedQty,
+  sortMode,
+  onSortModeChange,
   busyKey,
   apiToken,
   onApply,
@@ -189,12 +212,24 @@ function InventoryEditColumn<TItem extends IngredientCatalogItem | BeverageCatal
   kind: 'ingredient' | 'beverage';
   items: TItem[];
   ownedQty: Record<number, number>;
+  sortMode: InventorySortMode;
+  onSortModeChange: (value: InventorySortMode) => void;
   busyKey: string;
   apiToken: string;
   onApply: (kind: 'ingredient' | 'beverage', id: number, quantity: number) => Promise<void>;
 }) {
   return (
-    <ListPanel title={`${title} (${items.length})`}>
+    <ListPanel
+      title={`${title} (${items.length})`}
+      action={(
+        <InventorySortControl
+          value={sortMode}
+          onChange={onSortModeChange}
+          disabled={items.length === 0}
+          aria-label={`${title}排序`}
+        />
+      )}
+    >
       <div className="space-y-2">
         {items.length === 0 && <EmptyRow text="没有匹配项目" />}
         {items.map((item) => {
@@ -214,7 +249,7 @@ function InventoryEditColumn<TItem extends IngredientCatalogItem | BeverageCatal
                 <div className="min-w-0 pr-1">
                   <div className="truncate font-medium" title={item.name}>{item.name}</div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    ID {item.id} · 当前 {quantity < 0 ? '无限' : quantity} · 单价 {item.price}
+                    ID {item.id} · 当前 {formatInventoryQuantity(quantity)} · 单价 {item.price}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -255,13 +290,17 @@ function InventoryEditColumn<TItem extends IngredientCatalogItem | BeverageCatal
   );
 }
 
-function filterInventoryItems<TItem extends IngredientCatalogItem | BeverageCatalogItem>(items: TItem[], normalizedSearch: string): TItem[] {
+function filterInventoryItems<TItem extends IngredientCatalogItem | BeverageCatalogItem>(
+  items: TItem[],
+  normalizedSearch: string,
+  ownedQty: Record<number, number> | null,
+  sortMode: InventorySortMode,
+): TItem[] {
   const rows = normalizedSearch
-    ? items.filter((item) => item.name.toLowerCase().includes(normalizedSearch) || String(item.id).includes(normalizedSearch))
+    ? items.filter((item) =>
+      item.name.toLocaleLowerCase('zh-Hans-CN').includes(normalizedSearch) || String(item.id).includes(normalizedSearch))
     : items;
-  return rows
-    .filter((item) => item.id >= 0)
-    .sort((a, b) => a.id - b.id);
+  return sortInventoryItems(rows, ownedQty, sortMode);
 }
 
 function inventoryDraftKey(kind: 'ingredient' | 'beverage', itemId: number) {

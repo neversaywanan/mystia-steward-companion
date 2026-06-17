@@ -251,7 +251,7 @@ export function getAutomationStepLabel(step: AutomationStep): string {
   }
 }
 
-export function isMeaningfulAutomationProgressStep(step: OrderPreparationStep): boolean {
+function isMeaningfulAutomationProgressStep(step: OrderPreparationStep): boolean {
   if (!step.ok || step.skipped) return false;
   if (step.name.includes('选择') || step.name.includes('匹配')) return false;
   return step.name.includes('自动取酒')
@@ -335,7 +335,7 @@ export function didOrderCookingStillPending(response: OrderPreparationResponse, 
       || step.message.includes('等待完成后会自动收入送餐盘')));
 }
 
-export function isInactiveSkippedStep(step: OrderPreparationStep): boolean {
+function isInactiveSkippedStep(step: OrderPreparationStep): boolean {
   if (!step.skipped) return false;
   return step.message.includes('设置已关闭')
     || step.message.includes('尚未获得')
@@ -364,7 +364,7 @@ export function isTransientAutoPreparationFailure(response: OrderPreparationResp
     || text.includes('长时间未读取到成品对象');
 }
 
-export function isHardAutoPreparationFailure(response: OrderPreparationResponse): boolean {
+function isHardAutoPreparationFailure(response: OrderPreparationResponse): boolean {
   const text = [
     response.error ?? '',
     ...response.steps.map((step) => `${step.name} ${step.message}`),
@@ -380,7 +380,7 @@ export function isHardAutoPreparationFailure(response: OrderPreparationResponse)
     || text.includes('收藏限定已开启');
 }
 
-export function summarizeOrderPreparationFailure(response: OrderPreparationResponse): string {
+function summarizeOrderPreparationFailure(response: OrderPreparationResponse): string {
   const failed = response.steps.find((step) => !step.ok && !step.skipped);
   return failed ? `${failed.name}: ${failed.message}` : response.error ?? '未知状态';
 }

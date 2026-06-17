@@ -183,8 +183,6 @@ export interface CachedRecommendation {
   blockedMessages: string[];
   recipes: RareRecipeRecommendation[];
   beverages: RareBeverageRecommendation[];
-  preferenceRecipes: RareRecipeRecommendation[];
-  preferenceBeverages: RareBeverageRecommendation[];
 }
 
 export interface OrderRecommendation extends CachedRecommendation {

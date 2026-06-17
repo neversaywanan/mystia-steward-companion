@@ -28,9 +28,14 @@ import {
   buildRareBeverageCandidates,
   buildRareFoodCandidates,
   buildRareOrderPlansFromCandidates,
+  compareBeverageCandidates,
+  compareFoodCandidates,
+  normalizeRecommendationSortProfile,
+  RECOMMENDATION_OBJECTIVE_DEFINITIONS,
   serializeRecommendationSortProfile,
   type BeverageCandidate,
   type FoodCandidate,
+  type RecommendationObjectiveKey,
   type RecommendationBudgetContext,
   type RecommendationBudgetPolicy,
   type RecommendationBudgetResult,
@@ -39,6 +44,7 @@ import {
   type RareRecipeRecommendation,
   type RecommendationPlanSortContext,
   type RecommendationRuntimeContext,
+  type RecommendationSortProfile,
 } from '@/recommendation-engine';
 
 const NON_ORDERABLE_RARE_FOOD_TAGS = new Set(['流行喜爱', '流行厌恶']);
@@ -107,6 +113,7 @@ export function buildOrderRecommendations(
       foodTag,
       beverageTag,
       missionTarget?.recipeId ?? null,
+      preferences,
     );
     const budgetContext = findBudgetContextForOrder(order, activeRareGuests);
     const foodCandidateKey = buildFoodCandidateCacheKey(data, customer, foodTag, candidateContext);
@@ -149,8 +156,20 @@ export function buildOrderRecommendations(
         data,
         { budget: budgetContext },
       );
-      const executionFoodCandidates = selectExecutionFoodCandidates(foodCandidates, beverageCandidates, orderRuntimeContext.budget, orderRuntimeContext.budgetPolicy);
-      const executionBeverageCandidates = selectExecutionBeverageCandidates(beverageCandidates, foodCandidates, orderRuntimeContext.budget, orderRuntimeContext.budgetPolicy);
+      const executionFoodCandidates = selectExecutionFoodCandidates(
+        foodCandidates,
+        beverageCandidates,
+        orderRuntimeContext.budget,
+        orderRuntimeContext.budgetPolicy,
+        sortContext,
+      );
+      const executionBeverageCandidates = selectExecutionBeverageCandidates(
+        beverageCandidates,
+        foodCandidates,
+        orderRuntimeContext.budget,
+        orderRuntimeContext.budgetPolicy,
+        sortContext,
+      );
       const plans = buildRareOrderPlansFromCandidates({
         data,
         customer,
@@ -168,31 +187,20 @@ export function buildOrderRecommendations(
         preparationPlan,
         budget: findRecommendationBudget(plans, preparationPlan),
         blockedMessages: buildBlockedPlanMessages(plans),
-        recipes: deriveRecipeRowsFromFoodCandidates(foodCandidates, beverageCandidates, {
-          requireOrderTag: true,
+        recipes: deriveRecipeRowsFromCandidates(foodCandidates, beverageCandidates, {
           variantLimitPerBase: preferences.recipeVariantLimitPerBase,
           limit: MAX_FOCUS_RECOMMENDATION_ROWS,
           budget: orderRuntimeContext.budget,
           budgetPolicy: orderRuntimeContext.budgetPolicy,
+          sortProfile: preferences.recommendationSortProfile,
+          sortContext,
         }),
         beverages: deriveBeverageRowsFromCandidates(beverageCandidates, foodCandidates, {
-          requireOrderTag: true,
           limit: MAX_FOCUS_RECOMMENDATION_ROWS,
           budget: orderRuntimeContext.budget,
           budgetPolicy: orderRuntimeContext.budgetPolicy,
-        }),
-        preferenceRecipes: deriveRecipeRowsFromFoodCandidates(foodCandidates, beverageCandidates, {
-          requireOrderTag: false,
-          variantLimitPerBase: preferences.recipeVariantLimitPerBase,
-          limit: MAX_FOCUS_RECOMMENDATION_ROWS,
-          budget: orderRuntimeContext.budget,
-          budgetPolicy: orderRuntimeContext.budgetPolicy,
-        }),
-        preferenceBeverages: deriveBeverageRowsFromCandidates(beverageCandidates, foodCandidates, {
-          requireOrderTag: false,
-          limit: MAX_FOCUS_RECOMMENDATION_ROWS,
-          budget: orderRuntimeContext.budget,
-          budgetPolicy: orderRuntimeContext.budgetPolicy,
+          sortProfile: preferences.recommendationSortProfile,
+          sortContext,
         }),
       };
       caches.orders.set(cacheKey, cached);
@@ -200,7 +208,6 @@ export function buildOrderRecommendations(
     }
 
     const recipeRows = markMissionRecipeRows(cached.recipes, missionTarget?.recipeId ?? null);
-    const preferenceRecipeRows = markMissionRecipeRows(cached.preferenceRecipes, missionTarget?.recipeId ?? null);
 
     recommendations.push({
       order,
@@ -210,8 +217,6 @@ export function buildOrderRecommendations(
       blockedMessages: cached.blockedMessages,
       recipes: recipeRows,
       beverages: cached.beverages,
-      preferenceRecipes: preferenceRecipeRows,
-      preferenceBeverages: cached.preferenceBeverages,
     });
   }
 
@@ -287,7 +292,8 @@ export function buildRecommendationPlanSortContext(
   customerId: number,
   foodTag: string,
   beverageTag: string,
-  missionRecipeId: number | null = null,
+  missionRecipeId: number | null,
+  preferences: CompanionPreferences,
 ): RecommendationPlanSortContext {
   return {
     favoriteRecipeKeys: new Set(
@@ -301,6 +307,9 @@ export function buildRecommendationPlanSortContext(
         .map((favorite) => favorite.beverageId),
     ),
     missionRecipeId,
+    pinMissionRecipe: preferences.pinMissionRecipeEnabled,
+    pinFavoriteRecipe: preferences.pinFavoriteRecipeEnabled,
+    pinFavoriteBeverage: preferences.pinFavoriteBeverageEnabled,
   };
 }
 
@@ -414,12 +423,17 @@ function selectExecutionFoodCandidates(
   beverageCandidates: BeverageCandidate[],
   budget: RecommendationBudgetContext | null,
   budgetPolicy: RecommendationBudgetPolicy,
+  sortContext: RecommendationPlanSortContext,
 ): FoodCandidate[] {
   const eligible = foodCandidates.filter((food) =>
     candidateHasNoHardFailures(food.conditionResults)
     && canPairFoodWithinBudget(food, beverageCandidates, budget, budgetPolicy),
   );
-  return eligible.slice(0, EXECUTION_FOOD_CANDIDATE_LIMIT);
+  return limitCandidatesByPinRank(
+    eligible,
+    EXECUTION_FOOD_CANDIDATE_LIMIT,
+    (food) => getFoodCandidatePinRank(food, sortContext),
+  );
 }
 
 function selectExecutionBeverageCandidates(
@@ -427,12 +441,65 @@ function selectExecutionBeverageCandidates(
   foodCandidates: FoodCandidate[],
   budget: RecommendationBudgetContext | null,
   budgetPolicy: RecommendationBudgetPolicy,
+  sortContext: RecommendationPlanSortContext,
 ): BeverageCandidate[] {
   const eligible = beverageCandidates.filter((beverage) =>
     candidateHasNoHardFailures(beverage.conditionResults)
     && canPairBeverageWithinBudget(beverage, foodCandidates, budget, budgetPolicy),
   );
-  return eligible.slice(0, EXECUTION_BEVERAGE_CANDIDATE_LIMIT);
+  return limitCandidatesByPinRank(
+    eligible,
+    EXECUTION_BEVERAGE_CANDIDATE_LIMIT,
+    (beverage) => getBeverageCandidatePinRank(beverage, sortContext),
+  );
+}
+
+function limitCandidatesByPinRank<TCandidate>(
+  candidates: TCandidate[],
+  limit: number,
+  getPinRank: (candidate: TCandidate) => number,
+): TCandidate[] {
+  const pinned = candidates
+    .map((candidate, index) => ({ candidate, index, rank: getPinRank(candidate) }))
+    .filter((entry) => entry.rank > 0)
+    .sort((left, right) => right.rank - left.rank || left.index - right.index);
+  const selected = new Set<TCandidate>();
+  const rows: TCandidate[] = [];
+
+  for (const entry of pinned) {
+    if (rows.length >= limit) return rows;
+    if (selected.has(entry.candidate)) continue;
+    selected.add(entry.candidate);
+    rows.push(entry.candidate);
+  }
+  for (const candidate of candidates) {
+    if (rows.length >= limit) break;
+    if (selected.has(candidate)) continue;
+    selected.add(candidate);
+    rows.push(candidate);
+  }
+
+  return rows;
+}
+
+function getFoodCandidatePinRank(
+  food: FoodCandidate,
+  sortContext: RecommendationPlanSortContext,
+): number {
+  if (sortContext.pinMissionRecipe && sortContext.missionRecipeId === food.recipe.id) return 3;
+  if (sortContext.pinFavoriteRecipe && sortContext.favoriteRecipeKeys?.has(buildRecipeSortKey(
+    food.recipe.id,
+    food.extraIngredients.map((ingredient) => ingredient.id),
+  ))) return 2;
+  return 0;
+}
+
+function getBeverageCandidatePinRank(
+  beverage: BeverageCandidate,
+  sortContext: RecommendationPlanSortContext,
+): number {
+  if (sortContext.pinFavoriteBeverage && sortContext.favoriteBeverageIds?.has(beverage.beverage.id)) return 1;
+  return 0;
 }
 
 function findPreparationPlan(plans: RareOrderRecommendationPlan[]): RareOrderRecommendationPlan | null {
@@ -457,21 +524,23 @@ function buildBlockedPlanMessages(plans: RareOrderRecommendationPlan[]): string[
   return [...new Set(messages)].slice(0, 3);
 }
 
-export function deriveRecipeRowsFromFoodCandidates(
+export function deriveRecipeRowsFromCandidates(
   foodCandidates: FoodCandidate[],
   beverageCandidates: BeverageCandidate[],
   {
-    requireOrderTag,
     variantLimitPerBase = Number.POSITIVE_INFINITY,
     limit = Number.POSITIVE_INFINITY,
-    budget = null,
-    budgetPolicy = 'ignore',
+    budget,
+    budgetPolicy,
+    sortProfile,
+    sortContext = {},
   }: {
-    requireOrderTag: boolean;
     variantLimitPerBase?: number;
     limit?: number;
-    budget?: RecommendationBudgetContext | null;
-    budgetPolicy?: RecommendationBudgetPolicy;
+    budget: RecommendationBudgetContext | null;
+    budgetPolicy: RecommendationBudgetPolicy;
+    sortProfile?: RecommendationSortProfile;
+    sortContext?: RecommendationPlanSortContext;
   },
 ): RareRecipeRecommendation[] {
   const rows: RareRecipeRecommendation[] = [];
@@ -481,11 +550,14 @@ export function deriveRecipeRowsFromFoodCandidates(
   const baseLimit = normalizeDerivedRowLimit(variantLimitPerBase);
   if (rowLimit <= 0 || baseLimit <= 0) return rows;
 
-  for (const food of foodCandidates) {
-    if (food.meetsRequiredFood !== requireOrderTag) continue;
-    if (!candidateHasNoHardFailures(food.conditionResults)) continue;
-    if (!canPairFoodWithinBudget(food, beverageCandidates, budget, budgetPolicy)) continue;
-
+  const rowSortContext = buildRecipeRowSortContext(sortContext);
+  const displayCandidates = foodCandidates.filter((food) =>
+    candidateHasNoHardFailures(food.conditionResults)
+    && canPairFoodWithinBudget(food, beverageCandidates, budget, budgetPolicy)
+    && isFoodRecommendationRowEligible(food, rowSortContext),
+  );
+  const sortedCandidates = sortFoodDisplayCandidates(displayCandidates, rowSortContext, sortProfile);
+  for (const food of sortedCandidates) {
     const row = toRareRecipeResult(food);
     const key = recipeResultKey(row);
     if (seen.has(key)) continue;
@@ -496,7 +568,6 @@ export function deriveRecipeRowsFromFoodCandidates(
     rows.push(row);
     if (rows.length >= rowLimit) break;
   }
-
   return rows;
 }
 
@@ -504,15 +575,17 @@ export function deriveBeverageRowsFromCandidates(
   beverageCandidates: BeverageCandidate[],
   foodCandidates: FoodCandidate[],
   {
-    requireOrderTag,
     limit = Number.POSITIVE_INFINITY,
-    budget = null,
-    budgetPolicy = 'ignore',
+    budget,
+    budgetPolicy,
+    sortProfile,
+    sortContext = {},
   }: {
-    requireOrderTag: boolean;
     limit?: number;
-    budget?: RecommendationBudgetContext | null;
-    budgetPolicy?: RecommendationBudgetPolicy;
+    budget: RecommendationBudgetContext | null;
+    budgetPolicy: RecommendationBudgetPolicy;
+    sortProfile?: RecommendationSortProfile;
+    sortContext?: RecommendationPlanSortContext;
   },
 ): RareBeverageRecommendation[] {
   const rows: RareBeverageRecommendation[] = [];
@@ -520,77 +593,17 @@ export function deriveBeverageRowsFromCandidates(
   const rowLimit = normalizeDerivedRowLimit(limit);
   if (rowLimit <= 0) return rows;
 
-  for (const beverage of beverageCandidates) {
-    if (beverage.meetsRequiredBeverage !== requireOrderTag) continue;
-    if (!candidateHasNoHardFailures(beverage.conditionResults)) continue;
-    if (!canPairBeverageWithinBudget(beverage, foodCandidates, budget, budgetPolicy)) continue;
+  const rowSortContext = buildBeverageRowSortContext(sortContext);
+  const displayCandidates = beverageCandidates.filter((beverage) =>
+    candidateHasNoHardFailures(beverage.conditionResults)
+    && canPairBeverageWithinBudget(beverage, foodCandidates, budget, budgetPolicy)
+    && isBeverageRecommendationRowEligible(beverage, rowSortContext),
+  );
+  const sortedCandidates = sortBeverageDisplayCandidates(displayCandidates, rowSortContext, sortProfile);
+  for (const beverage of sortedCandidates) {
     if (seen.has(beverage.beverage.id)) continue;
     seen.add(beverage.beverage.id);
     rows.push(toRareBeverageResult(beverage));
-    if (rows.length >= rowLimit) break;
-  }
-
-  return rows;
-}
-
-export function deriveRecipeRowsFromPlans(
-  plans: RareOrderRecommendationPlan[],
-  {
-    requireOrderTag,
-    variantLimitPerBase = Number.POSITIVE_INFINITY,
-    limit = Number.POSITIVE_INFINITY,
-  }: {
-    requireOrderTag: boolean;
-    variantLimitPerBase?: number;
-    limit?: number;
-  },
-): RareRecipeRecommendation[] {
-  const rows: RareRecipeRecommendation[] = [];
-  const seen = new Set<string>();
-  const baseRecipeCounts = new Map<number, number>();
-  const rowLimit = normalizeDerivedRowLimit(limit);
-  const baseLimit = normalizeDerivedRowLimit(variantLimitPerBase);
-  if (rowLimit <= 0 || baseLimit <= 0) return rows;
-
-  for (const plan of plans) {
-    if (!plan.food) continue;
-    if (plan.bucket === 'blocked') continue;
-    if (plan.food.meetsRequiredFood !== requireOrderTag) continue;
-    const row = toRareRecipeResult(plan.food);
-    const key = recipeResultKey(row);
-    if (seen.has(key)) continue;
-    const currentBaseCount = baseRecipeCounts.get(row.recipe.id) ?? 0;
-    if (currentBaseCount >= baseLimit) continue;
-    seen.add(key);
-    baseRecipeCounts.set(row.recipe.id, currentBaseCount + 1);
-    rows.push(row);
-    if (rows.length >= rowLimit) break;
-  }
-  return rows;
-}
-
-export function deriveBeverageRowsFromPlans(
-  plans: RareOrderRecommendationPlan[],
-  {
-    requireOrderTag,
-    limit = Number.POSITIVE_INFINITY,
-  }: {
-    requireOrderTag: boolean;
-    limit?: number;
-  },
-): RareBeverageRecommendation[] {
-  const rows: RareBeverageRecommendation[] = [];
-  const seen = new Set<number>();
-  const rowLimit = normalizeDerivedRowLimit(limit);
-  if (rowLimit <= 0) return rows;
-
-  for (const plan of plans) {
-    if (!plan.beverage) continue;
-    if (plan.bucket === 'blocked') continue;
-    if (plan.beverage.meetsRequiredBeverage !== requireOrderTag) continue;
-    if (seen.has(plan.beverage.beverage.id)) continue;
-    seen.add(plan.beverage.beverage.id);
-    rows.push(toRareBeverageResult(plan.beverage));
     if (rows.length >= rowLimit) break;
   }
   return rows;
@@ -599,6 +612,187 @@ export function deriveBeverageRowsFromPlans(
 function normalizeDerivedRowLimit(value: number): number {
   if (!Number.isFinite(value)) return Number.POSITIVE_INFINITY;
   return Math.max(0, Math.trunc(value));
+}
+
+function buildRecipeRowSortContext(sortContext: RecommendationPlanSortContext): RecommendationPlanSortContext {
+  return {
+    ...sortContext,
+    pinFavoriteBeverage: false,
+  };
+}
+
+function buildBeverageRowSortContext(sortContext: RecommendationPlanSortContext): RecommendationPlanSortContext {
+  return {
+    ...sortContext,
+    pinMissionRecipe: false,
+    pinFavoriteRecipe: false,
+  };
+}
+
+function sortFoodDisplayCandidates(
+  candidates: FoodCandidate[],
+  sortContext: RecommendationPlanSortContext,
+  sortProfile?: RecommendationSortProfile,
+): FoodCandidate[] {
+  const profile = normalizeRecommendationSortProfile(sortProfile);
+  const ranges = buildCandidateObjectiveRanges(candidates, getFoodCandidateObjectiveValue);
+  return [...candidates].sort((left, right) =>
+    compareFoodDisplayCandidates(left, right, profile, sortContext, ranges),
+  );
+}
+
+function sortBeverageDisplayCandidates(
+  candidates: BeverageCandidate[],
+  sortContext: RecommendationPlanSortContext,
+  sortProfile?: RecommendationSortProfile,
+): BeverageCandidate[] {
+  const profile = normalizeRecommendationSortProfile(sortProfile);
+  const ranges = buildCandidateObjectiveRanges(candidates, getBeverageCandidateObjectiveValue);
+  return [...candidates].sort((left, right) =>
+    compareBeverageDisplayCandidates(left, right, profile, sortContext, ranges),
+  );
+}
+
+function compareFoodDisplayCandidates(
+  left: FoodCandidate,
+  right: FoodCandidate,
+  profile: RecommendationSortProfile,
+  sortContext: RecommendationPlanSortContext,
+  ranges: Map<RecommendationObjectiveKey, ObjectiveRange>,
+): number {
+  const pinDiff = getFoodCandidatePinRank(right, sortContext) - getFoodCandidatePinRank(left, sortContext);
+  if (pinDiff !== 0) return pinDiff;
+  const requiredDiff = Number(right.meetsRequiredFood) - Number(left.meetsRequiredFood);
+  if (requiredDiff !== 0) return requiredDiff;
+  const scoreDiff = calculateCandidateScore(right, profile, ranges, getFoodCandidateObjectiveValue)
+    - calculateCandidateScore(left, profile, ranges, getFoodCandidateObjectiveValue);
+  if (scoreDiff !== 0) return scoreDiff;
+  return compareFoodCandidates(left, right);
+}
+
+function compareBeverageDisplayCandidates(
+  left: BeverageCandidate,
+  right: BeverageCandidate,
+  profile: RecommendationSortProfile,
+  sortContext: RecommendationPlanSortContext,
+  ranges: Map<RecommendationObjectiveKey, ObjectiveRange>,
+): number {
+  const pinDiff = getBeverageCandidatePinRank(right, sortContext) - getBeverageCandidatePinRank(left, sortContext);
+  if (pinDiff !== 0) return pinDiff;
+  const requiredDiff = Number(right.meetsRequiredBeverage) - Number(left.meetsRequiredBeverage);
+  if (requiredDiff !== 0) return requiredDiff;
+  const scoreDiff = calculateCandidateScore(right, profile, ranges, getBeverageCandidateObjectiveValue)
+    - calculateCandidateScore(left, profile, ranges, getBeverageCandidateObjectiveValue);
+  if (scoreDiff !== 0) return scoreDiff;
+  return compareBeverageCandidates(left, right);
+}
+
+interface ObjectiveRange {
+  min: number;
+  max: number;
+}
+
+function buildCandidateObjectiveRanges<TCandidate>(
+  candidates: TCandidate[],
+  getValue: (candidate: TCandidate, key: RecommendationObjectiveKey) => number,
+): Map<RecommendationObjectiveKey, ObjectiveRange> {
+  const ranges = new Map<RecommendationObjectiveKey, ObjectiveRange>();
+  for (const { key } of RECOMMENDATION_OBJECTIVE_DEFINITIONS) {
+    const values = candidates.map((candidate) => getValue(candidate, key));
+    ranges.set(key, values.length === 0
+      ? { min: 0, max: 0 }
+      : { min: Math.min(...values), max: Math.max(...values) });
+  }
+
+  return ranges;
+}
+
+function calculateCandidateScore<TCandidate>(
+  candidate: TCandidate,
+  profile: RecommendationSortProfile,
+  ranges: Map<RecommendationObjectiveKey, ObjectiveRange>,
+  getValue: (candidate: TCandidate, key: RecommendationObjectiveKey) => number,
+): number {
+  return profile.objectives.reduce((sum, rule) => {
+    if (!rule.enabled || rule.weight <= 0) return sum;
+    const range = ranges.get(rule.key);
+    const rawValue = getValue(candidate, rule.key);
+    return sum + normalizeObjectiveValue(rawValue, range, rule.direction) * rule.weight;
+  }, 0);
+}
+
+function normalizeObjectiveValue(
+  value: number,
+  range: ObjectiveRange | undefined,
+  direction: 'asc' | 'desc',
+): number {
+  if (!range || range.max === range.min) return 0;
+  const normalized = (value - range.min) / (range.max - range.min);
+  return direction === 'desc' ? normalized : 1 - normalized;
+}
+
+function getFoodCandidateObjectiveValue(
+  food: FoodCandidate,
+  key: RecommendationObjectiveKey,
+): number {
+  switch (key) {
+    case 'foodPreference':
+      return food.matchedPositiveTags.length;
+    case 'negativeRisk':
+      return food.matchedNegativeTags.length;
+    case 'extraCount':
+      return food.extraIngredients.length;
+    case 'resourcePressure':
+      return food.resourcePressure;
+    case 'totalCost':
+      return food.baseCost + food.extraCost;
+    case 'profit':
+      return food.recipe.price - food.baseCost - food.extraCost;
+    case 'cookerAvailable':
+      return food.cookerAvailable ? 1 : 0;
+    case 'beveragePreference':
+    case 'beverageStock':
+      return 0;
+  }
+}
+
+function getBeverageCandidateObjectiveValue(
+  beverage: BeverageCandidate,
+  key: RecommendationObjectiveKey,
+): number {
+  switch (key) {
+    case 'beveragePreference':
+      return beverage.matchedTags.length;
+    case 'profit':
+      return beverage.beverage.price;
+    case 'beverageStock':
+      return beverage.ownedQuantity;
+    case 'foodPreference':
+    case 'negativeRisk':
+    case 'extraCount':
+    case 'resourcePressure':
+    case 'totalCost':
+    case 'cookerAvailable':
+      return 0;
+  }
+}
+
+function isFoodRecommendationRowEligible(
+  food: FoodCandidate,
+  sortContext: RecommendationPlanSortContext,
+): boolean {
+  return food.meetsRequiredFood
+    || food.matchedPositiveTags.length > 0
+    || getFoodCandidatePinRank(food, sortContext) > 0;
+}
+
+function isBeverageRecommendationRowEligible(
+  beverage: BeverageCandidate,
+  sortContext: RecommendationPlanSortContext,
+): boolean {
+  return beverage.meetsRequiredBeverage
+    || beverage.matchedTags.length > 0
+    || getBeverageCandidatePinRank(beverage, sortContext) > 0;
 }
 
 function candidateHasNoHardFailures(results: { status: string; severity: string }[]): boolean {
@@ -779,6 +973,9 @@ function serializeRecommendationPlanSortContext(context: RecommendationPlanSortC
     `mission:${context.missionRecipeId ?? ''}`,
     `recipeFav:${[...(context.favoriteRecipeKeys ?? [])].sort().join(';')}`,
     `bevFav:${[...(context.favoriteBeverageIds ?? [])].sort((left, right) => left - right).join(',')}`,
+    `pinMission:${context.pinMissionRecipe ? '1' : '0'}`,
+    `pinRecipeFav:${context.pinFavoriteRecipe ? '1' : '0'}`,
+    `pinBevFav:${context.pinFavoriteBeverage ? '1' : '0'}`,
   ].join('|');
 }
 

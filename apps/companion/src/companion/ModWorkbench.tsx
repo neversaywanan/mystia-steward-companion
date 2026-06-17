@@ -1365,6 +1365,7 @@ export function ModWorkbench() {
             apiToken={apiToken}
             preferences={companionPreferences}
             data={recommendationData}
+            runtimeSets={runtimeSets}
             themeMode={themeMode}
             serviceFocusCompact={serviceFocusCompact}
             onPreferenceChange={updateCompanionPreferences}

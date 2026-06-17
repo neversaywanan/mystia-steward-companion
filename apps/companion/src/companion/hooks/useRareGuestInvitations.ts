@@ -64,9 +64,6 @@ export function useRareGuestInvitations({
         rareGuestInvitationScope,
       );
       setRareGuestInvitationResult(response);
-      if (!response.ok) {
-        setRareGuestInvitationError(response.error || response.status || '读取可邀请稀客失败');
-      }
     } catch (err) {
       setRareGuestInvitationError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -90,9 +87,6 @@ export function useRareGuestInvitations({
         rareGuestInvitationLevels,
       );
       setRareGuestInvitationResult(response);
-      if (!response.ok) {
-        setRareGuestInvitationError(response.error || response.status || '稀客邀请失败');
-      }
       await refresh(true);
     } catch (err) {
       setRareGuestInvitationError(err instanceof Error ? err.message : String(err));
@@ -113,9 +107,6 @@ export function useRareGuestInvitations({
     try {
       const response = await inviteAvailableRareGuest(normalizedEndpoint, apiToken, guestId, rareGuestInvitationScope);
       setRareGuestInvitationResult(response);
-      if (!response.ok) {
-        setRareGuestInvitationError(response.error || response.status || '稀客邀请失败');
-      }
       await refresh(true);
     } catch (err) {
       setRareGuestInvitationError(err instanceof Error ? err.message : String(err));

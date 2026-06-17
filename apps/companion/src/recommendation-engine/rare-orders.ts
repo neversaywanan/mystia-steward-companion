@@ -26,6 +26,8 @@ import type {
 } from '@/recommendation-engine/types';
 
 const DEFAULT_BEAM_WIDTH = 64;
+const DEFAULT_FOOD_PLAN_CANDIDATE_LIMIT = 80;
+const DEFAULT_BEVERAGE_PLAN_CANDIDATE_LIMIT = 40;
 const LOW_STOCK_THRESHOLD = 5;
 
 interface BuildRareOrderPlansOptions {
@@ -83,8 +85,8 @@ export function buildRareOrderPlans({
     limit,
     sortProfile,
     sortContext,
-    foodCandidates,
-    beverageCandidates,
+    foodCandidates: foodCandidates.slice(0, DEFAULT_FOOD_PLAN_CANDIDATE_LIMIT),
+    beverageCandidates: beverageCandidates.slice(0, DEFAULT_BEVERAGE_PLAN_CANDIDATE_LIMIT),
   });
 }
 
@@ -128,7 +130,7 @@ export function sortRareOrderPlans(
   sortContext: RecommendationPlanSortContext = {},
 ): RareOrderRecommendationPlan[] {
   const profile = normalizeRecommendationSortProfile(sortProfile);
-  const ranges = buildObjectiveRanges(plans, sortContext);
+  const ranges = buildObjectiveRanges(plans);
 
   return [...plans].sort((left, right) => compareRarePlans(left, right, profile, sortContext, ranges));
 }
@@ -181,7 +183,7 @@ export function buildRareFoodCandidates(
     }
   }
 
-  return candidates.sort(compareFoodCandidates).slice(0, 80);
+  return candidates.sort(compareFoodCandidates);
 }
 
 export function buildRareBeverageCandidates(
@@ -228,7 +230,7 @@ export function buildRareBeverageCandidates(
     });
   }
 
-  return rows.sort(compareBeverageCandidates).slice(0, 40);
+  return rows.sort(compareBeverageCandidates);
 }
 
 function buildRarePlan(
@@ -702,7 +704,7 @@ function compareIngredientStates(left: IngredientSearchState, right: IngredientS
   return stateKey(left).localeCompare(stateKey(right));
 }
 
-function compareFoodCandidates(left: FoodCandidate, right: FoodCandidate): number {
+export function compareFoodCandidates(left: FoodCandidate, right: FoodCandidate): number {
   const leftRequired = left.meetsRequiredFood ? 1 : 0;
   const rightRequired = right.meetsRequiredFood ? 1 : 0;
   if (leftRequired !== rightRequired) return rightRequired - leftRequired;
@@ -722,7 +724,7 @@ function compareFoodCandidates(left: FoodCandidate, right: FoodCandidate): numbe
   return left.recipe.id - right.recipe.id;
 }
 
-function compareBeverageCandidates(left: BeverageCandidate, right: BeverageCandidate): number {
+export function compareBeverageCandidates(left: BeverageCandidate, right: BeverageCandidate): number {
   const leftRequired = left.meetsRequiredBeverage ? 1 : 0;
   const rightRequired = right.meetsRequiredBeverage ? 1 : 0;
   if (leftRequired !== rightRequired) return rightRequired - leftRequired;
@@ -739,11 +741,13 @@ function compareRarePlans(
   sortContext: RecommendationPlanSortContext,
   ranges: Map<RecommendationObjectiveKey, ObjectiveRange>,
 ): number {
-  const bucketDiff = getBucketRank(right.bucket, profile) - getBucketRank(left.bucket, profile);
+  const pinDiff = getPlanPinRank(right, sortContext) - getPlanPinRank(left, sortContext);
+  if (pinDiff !== 0) return pinDiff;
+  const bucketDiff = getBucketRank(right.bucket) - getBucketRank(left.bucket);
   if (bucketDiff !== 0) return bucketDiff;
   if (left.warnings.length !== right.warnings.length) return left.warnings.length - right.warnings.length;
-  const scoreDiff = calculatePlanScore(right, profile, sortContext, ranges)
-    - calculatePlanScore(left, profile, sortContext, ranges);
+  const scoreDiff = calculatePlanScore(right, profile, ranges)
+    - calculatePlanScore(left, profile, ranges);
   if (scoreDiff !== 0) return scoreDiff;
   if (left.food && right.food) {
     const foodDiff = compareFoodCandidates(left.food, right.food);
@@ -763,12 +767,9 @@ interface ObjectiveRange {
 
 function buildObjectiveRanges(
   plans: RareOrderRecommendationPlan[],
-  sortContext: RecommendationPlanSortContext,
 ): Map<RecommendationObjectiveKey, ObjectiveRange> {
   const ranges = new Map<RecommendationObjectiveKey, ObjectiveRange>();
   const keys: RecommendationObjectiveKey[] = [
-    'mission',
-    'favorite',
     'foodPreference',
     'beveragePreference',
     'negativeRisk',
@@ -781,7 +782,7 @@ function buildObjectiveRanges(
   ];
 
   for (const key of keys) {
-    const values = plans.map((plan) => getPlanObjectiveValue(plan, key, sortContext));
+    const values = plans.map((plan) => getPlanObjectiveValue(plan, key));
     if (values.length === 0) {
       ranges.set(key, { min: 0, max: 0 });
       continue;
@@ -798,13 +799,12 @@ function buildObjectiveRanges(
 function calculatePlanScore(
   plan: RareOrderRecommendationPlan,
   profile: RecommendationSortProfile,
-  sortContext: RecommendationPlanSortContext,
   ranges: Map<RecommendationObjectiveKey, ObjectiveRange>,
 ): number {
   return profile.objectives.reduce((sum, rule) => {
     if (!rule.enabled || rule.weight <= 0) return sum;
     const range = ranges.get(rule.key);
-    const rawValue = getPlanObjectiveValue(plan, rule.key, sortContext);
+    const rawValue = getPlanObjectiveValue(plan, rule.key);
     return sum + normalizeObjectiveValue(rawValue, range, rule.direction) * rule.weight;
   }, 0);
 }
@@ -822,17 +822,11 @@ function normalizeObjectiveValue(
 function getPlanObjectiveValue(
   plan: RareOrderRecommendationPlan,
   key: RecommendationObjectiveKey,
-  sortContext: RecommendationPlanSortContext,
 ): number {
   const food = plan.food;
   const beverage = plan.beverage;
 
   switch (key) {
-    case 'mission':
-      return food && sortContext.missionRecipeId === food.recipe.id ? 1 : 0;
-    case 'favorite':
-      return (food && sortContext.favoriteRecipeKeys?.has(buildPlanRecipeKey(food)) ? 1 : 0)
-        + (beverage && sortContext.favoriteBeverageIds?.has(beverage.beverage.id) ? 1 : 0);
     case 'foodPreference':
       return food?.matchedPositiveTags.length ?? 0;
     case 'beveragePreference':
@@ -855,6 +849,17 @@ function getPlanObjectiveValue(
   }
 }
 
+function getPlanPinRank(
+  plan: RareOrderRecommendationPlan,
+  sortContext: RecommendationPlanSortContext,
+): number {
+  if (plan.bucket === 'blocked') return 0;
+  if (sortContext.pinMissionRecipe && plan.food && sortContext.missionRecipeId === plan.food.recipe.id) return 3;
+  if (sortContext.pinFavoriteRecipe && plan.food && sortContext.favoriteRecipeKeys?.has(buildPlanRecipeKey(plan.food))) return 2;
+  if (sortContext.pinFavoriteBeverage && plan.beverage && sortContext.favoriteBeverageIds?.has(plan.beverage.beverage.id)) return 1;
+  return 0;
+}
+
 function buildPlanRecipeKey(food: FoodCandidate): string {
   const extraIds = food.extraIngredients
     .map((ingredient) => ingredient.id)
@@ -863,14 +868,14 @@ function buildPlanRecipeKey(food: FoodCandidate): string {
   return `${food.recipe.id}:${extraIds}`;
 }
 
-function getBucketRank(bucket: RecommendationBucket, profile: RecommendationSortProfile): number {
+function getBucketRank(bucket: RecommendationBucket): number {
   switch (bucket) {
     case 'complete':
       return 4;
     case 'tradeoff':
       return 3;
     case 'preference':
-      return profile.bucketPolicy === 'allowPreferenceFallback' ? 3 : 2;
+      return 2;
     case 'blocked':
       return 1;
   }
