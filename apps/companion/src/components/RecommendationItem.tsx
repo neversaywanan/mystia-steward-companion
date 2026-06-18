@@ -18,6 +18,7 @@ interface RecommendationFavoriteAction {
 
 interface RecommendationItemProps {
   index: number;
+  leading?: ReactNode;
   title: ReactNode;
   titleSuffix?: ReactNode;
   badges?: ReactNode;
@@ -39,6 +40,7 @@ interface RecommendationTagPillsProps {
 
 function RecommendationItem({
   index,
+  leading,
   title,
   titleSuffix,
   badges,
@@ -52,19 +54,8 @@ function RecommendationItem({
   className,
 }: RecommendationItemProps) {
   const favoriteLabel = favorite?.active ? favorite.activeLabel : favorite?.inactiveLabel;
-
-  return (
-    <div
-      className={composeClassNames(
-        compact ? 'rounded-md border border-border/80 p-1.5 text-xs' : 'rounded-md border border-border/80 p-2 text-sm',
-        className,
-      )}
-      data-gamepad-focusable={favorite ? 'true' : undefined}
-      data-gamepad-favorite-scope={favorite ? 'true' : undefined}
-      data-gamepad-row={favorite ? 'true' : undefined}
-      data-gamepad-row-key={favorite && gamepadRowKey ? gamepadRowKey : undefined}
-      tabIndex={favorite ? 0 : undefined}
-    >
+  const content = (
+    <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
           <span className="text-xs text-muted-foreground">#{index + 1}</span>
@@ -94,6 +85,27 @@ function RecommendationItem({
       </div>
       {meta && <div className="mt-1 flex flex-wrap gap-1.5">{meta}</div>}
       {children}
+    </>
+  );
+
+  return (
+    <div
+      className={composeClassNames(
+        compact ? 'rounded-md border border-border/80 p-1.5 text-xs' : 'rounded-md border border-border/80 p-2 text-sm',
+        className,
+      )}
+      data-gamepad-focusable={favorite ? 'true' : undefined}
+      data-gamepad-favorite-scope={favorite ? 'true' : undefined}
+      data-gamepad-row={favorite ? 'true' : undefined}
+      data-gamepad-row-key={favorite && gamepadRowKey ? gamepadRowKey : undefined}
+      tabIndex={favorite ? 0 : undefined}
+    >
+      {leading ? (
+        <div className="flex items-start gap-2">
+          {leading}
+          <div className="min-w-0 flex-1">{content}</div>
+        </div>
+      ) : content}
     </div>
   );
 }

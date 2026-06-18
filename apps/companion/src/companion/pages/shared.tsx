@@ -1,4 +1,6 @@
 import { PlaceSelect } from '@/components/controls/PlaceSelect';
+import { BeverageSprite } from '@/components/BeverageSprite';
+import { RecipeSprite } from '@/components/RecipeSprite';
 import { RecommendationItem, RecommendationMetaBadge, RecommendationTagPills } from '@/components/RecommendationItem';
 import { CustomerCoverageBadges } from '@/components/recommendation/CustomerCoverageBadges';
 import { TagPill, TagPillGroup } from '@/components/recommendation/TagPillGroup';
@@ -344,6 +346,7 @@ export function NormalRecipeRow({
   return (
     <RecommendationItem
       index={index}
+      leading={<RecipeSprite recipe={recipe.recipe} />}
       title={recipe.recipe.name}
       summary={`覆盖 ${recipe.totalCoverage} · 成本 ${recipe.ingredientCost} · 利润 ${recipe.profit} · 价格 ${recipe.recipe.price}`}
       inlineMeta={<RecommendationMetaBadge label="厨具" value={recipe.recipe.cooker || '未知'} tone="cooker" />}
@@ -373,6 +376,7 @@ export function NormalBeverageRow({
   return (
     <RecommendationItem
       index={index}
+      leading={<BeverageSprite beverage={beverage.beverage} />}
       title={beverage.beverage.name}
       titleSuffix={formatQtySuffix(ownedBeverageQty[beverage.beverage.id])}
       summary={`覆盖 ${beverage.totalCoverage} · 价格 ${beverage.beverage.price}`}
@@ -536,6 +540,7 @@ export function RecipeRecommendationRow({
   return (
     <RecommendationItem
       index={index}
+      leading={<RecipeSprite recipe={recipe.recipe} size={compact ? 'sm' : 'md'} />}
       title={recipe.recipe.name}
       badges={(
         <>
@@ -597,6 +602,7 @@ export function BeverageRecommendationRow({
   return (
     <RecommendationItem
       index={index}
+      leading={<BeverageSprite beverage={beverage.beverage} size={compact ? 'sm' : 'md'} />}
       title={beverage.beverage.name}
       titleSuffix={formatQtySuffix(ownedBeverageQty[beverage.beverage.id])}
       badges={(

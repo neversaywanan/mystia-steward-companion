@@ -9,6 +9,7 @@ import {
   GITHUB_RECIPE_SPRITE_CONFIG,
   resolveGithubRecipeSprite,
 } from '../src/lib/github-recipe-sprites.ts';
+import { buildSpriteSheetLayout } from '../src/lib/sprite-sheet.ts';
 
 test('beverage sprites resolve by runtime id before display name', () => {
   assert.equal(resolveGithubBeverageSprite({ id: 13, name: '错误名称' })?.name, '红魔馆红茶');
@@ -34,4 +35,17 @@ test('unknown catalog items use the component fallback path', () => {
 test('sprite sheet geometry covers every mapped item', () => {
   assert.deepEqual(GITHUB_BEVERAGE_SPRITE_CONFIG, { columns: 10, cellSize: 26, rows: 5 });
   assert.deepEqual(GITHUB_RECIPE_SPRITE_CONFIG, { columns: 10, cellSize: 26, rows: 20 });
+});
+
+test('sprite sheet layout scales and offsets the selected source cell', () => {
+  assert.deepEqual(buildSpriteSheetLayout({ columns: 10, rows: 20, spriteIndex: 189, tileSize: 40 }), {
+    height: 800,
+    transform: 'translate(-360px, -720px)',
+    width: 400,
+  });
+});
+
+test('sprite sheet layout rejects indexes outside configured geometry', () => {
+  assert.equal(buildSpriteSheetLayout({ columns: 10, rows: 5, spriteIndex: -1, tileSize: 32 }), null);
+  assert.equal(buildSpriteSheetLayout({ columns: 10, rows: 5, spriteIndex: 50, tileSize: 32 }), null);
 });
