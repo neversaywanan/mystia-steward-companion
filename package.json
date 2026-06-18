@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config apps/companion/vite.config.ts",
+    "test": "node --experimental-strip-types --test apps/companion/tests/*.test.mjs",
     "build": "tsc -b apps/companion/tsconfig.json && vite build --config apps/companion/vite.config.ts",
     "lint": "eslint .",
     "mock:api": "node scripts/mock-local-api.mjs",

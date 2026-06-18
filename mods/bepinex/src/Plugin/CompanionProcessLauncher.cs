@@ -11,6 +11,7 @@ internal static class CompanionProcessLauncher
     private const string ControlShow = "mystia-steward-companion:show";
     private const string ControlToggle = "mystia-steward-companion:toggle";
     private const string ControlExit = "mystia-steward-companion:exit";
+    private const string ControlVersionPrefix = "mystia-steward-companion:version=";
     private static readonly object RequestLock = new();
     private static DateTime _lastRequestUtc = DateTime.MinValue;
 
@@ -27,20 +28,32 @@ internal static class CompanionProcessLauncher
 
     public static void TryShowOrLaunch(StewardPluginConfig config, ManualLogSource log, string localApiToken)
     {
-        if (SendControlMessage(ControlShow)) return;
+        if (TryActivateCompatibleCompanion(ControlShow, log)) return;
         TryLaunch(config, log, localApiToken);
     }
 
     public static void TryToggleOrLaunch(StewardPluginConfig config, ManualLogSource log, string localApiToken)
     {
         if (IsRequestThrottled()) return;
-        if (SendControlMessage(ControlToggle)) return;
+        if (TryActivateCompatibleCompanion(ControlToggle, log)) return;
         TryLaunch(config, log, localApiToken);
     }
 
     public static void TryNotifyExit()
     {
         SendControlMessage(ControlExit);
+    }
+
+    private static bool TryActivateCompatibleCompanion(string message, ManualLogSource log)
+    {
+        var peerStatus = SendControlMessage(message);
+        if (peerStatus == ControlPeerStatus.Compatible) return true;
+        if (peerStatus == ControlPeerStatus.Unavailable) return false;
+
+        log.LogInfo("Replacing an outdated companion process with the packaged version.");
+        SendControlMessage(ControlExit);
+        WaitForControlServerExit();
+        return false;
     }
 
     private static void TryLaunch(StewardPluginConfig config, ManualLogSource log, string localApiToken)
@@ -77,31 +90,66 @@ internal static class CompanionProcessLauncher
         }
     }
 
-    private static bool SendControlMessage(string message)
+    private static ControlPeerStatus SendControlMessage(string message)
     {
+        var didConnect = false;
         try
         {
             using var client = new TcpClient();
             if (!client.ConnectAsync("127.0.0.1", ControlPort).Wait(TimeSpan.FromMilliseconds(180)))
             {
-                return false;
+                return ControlPeerStatus.Unavailable;
             }
+            didConnect = true;
 
             var bytes = Encoding.UTF8.GetBytes(BuildControlMessage(message));
             using var stream = client.GetStream();
+            stream.ReadTimeout = 250;
             stream.Write(bytes, 0, bytes.Length);
             stream.Flush();
-            return true;
+            using var reader = new StreamReader(stream, Encoding.UTF8, false, 128, leaveOpen: true);
+            var response = reader.ReadLine()?.Trim() ?? "";
+            var expectedVersion = ControlVersionPrefix + MystiaStewardCompanionPlugin.PluginVersion;
+            return string.Equals(response, expectedVersion, StringComparison.Ordinal)
+                ? ControlPeerStatus.Compatible
+                : ControlPeerStatus.Incompatible;
         }
         catch
         {
-            return false;
+            return didConnect
+                ? ControlPeerStatus.Incompatible
+                : ControlPeerStatus.Unavailable;
+        }
+    }
+
+    private static void WaitForControlServerExit()
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            try
+            {
+                using var client = new TcpClient();
+                if (!client.ConnectAsync("127.0.0.1", ControlPort).Wait(TimeSpan.FromMilliseconds(50))) return;
+            }
+            catch
+            {
+                return;
+            }
+
+            Thread.Sleep(50);
         }
     }
 
     private static string BuildControlMessage(string message)
     {
         return $"{message}\n--game-pid={Process.GetCurrentProcess().Id}\n";
+    }
+
+    private enum ControlPeerStatus
+    {
+        Unavailable,
+        Compatible,
+        Incompatible,
     }
 
     private static bool IsRequestThrottled()
@@ -141,13 +189,13 @@ internal static class CompanionProcessLauncher
         var candidates = OperatingSystem.IsWindows()
             ? new[]
             {
-                "mystia-steward-companion.exe",
                 Path.Combine("companion", "mystia-steward-companion.exe"),
+                "mystia-steward-companion.exe",
             }
             : new[]
             {
-                "mystia-steward-companion",
                 Path.Combine("companion", "mystia-steward-companion"),
+                "mystia-steward-companion",
             };
 
         return candidates

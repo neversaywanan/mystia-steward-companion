@@ -20,6 +20,7 @@ const CONTROL_PORT: u16 = 32146;
 const CONTROL_SHOW: &[u8] = b"mystia-steward-companion:show";
 const CONTROL_TOGGLE: &[u8] = b"mystia-steward-companion:toggle";
 const CONTROL_EXIT: &[u8] = b"mystia-steward-companion:exit";
+const CONTROL_VERSION_PREFIX: &str = "mystia-steward-companion:version=";
 const WINDOW_STATE_FILE: &str = "window-state.txt";
 const MIN_WINDOW_WIDTH: u32 = 720;
 const MIN_WINDOW_HEIGHT: u32 = 520;
@@ -430,6 +431,8 @@ fn start_instance_control_server(
                 continue;
             };
             let message = &buffer[..size];
+            let version_response = format!("{CONTROL_VERSION_PREFIX}{}\n", env!("CARGO_PKG_VERSION"));
+            let _ = stream.write_all(version_response.as_bytes());
             update_game_pid(&game_pid, parse_control_game_pid(message));
             if message.starts_with(CONTROL_SHOW) {
                 show_main_window(&app, &mouse_passthrough);
