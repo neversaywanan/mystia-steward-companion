@@ -1,0 +1,6 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="96" height="96" rx="24" fill="#D7743E"/>
+  <circle cx="48" cy="37" r="18" fill="#2E2016"/>
+  <path d="M18 78C22 60 34 51 48 51C62 51 74 60 78 78" fill="#2E2016"/>
+  <text x="48" y="56" text-anchor="middle" font-size="22" font-family="sans-serif" fill="#FFF4E8">露</text>
+</svg>

@@ -1,0 +1,6 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="96" height="96" rx="24" fill="#B44C6A"/>
+  <circle cx="48" cy="37" r="18" fill="#341720"/>
+  <path d="M18 78C22 60 34 51 48 51C62 51 74 60 78 78" fill="#341720"/>
+  <text x="48" y="56" text-anchor="middle" font-size="20" font-family="sans-serif" fill="#FFF1F5">蕾</text>
+</svg>

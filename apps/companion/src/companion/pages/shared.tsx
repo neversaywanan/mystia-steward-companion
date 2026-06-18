@@ -1,6 +1,7 @@
 import { PlaceSelect } from '@/components/controls/PlaceSelect';
 import { BeverageSprite } from '@/components/BeverageSprite';
 import { RecipeSprite } from '@/components/RecipeSprite';
+import { RareGuestAvatar } from '@/components/RareGuestAvatar';
 import { RecommendationItem, RecommendationMetaBadge, RecommendationTagPills } from '@/components/RecommendationItem';
 import { CustomerCoverageBadges } from '@/components/recommendation/CustomerCoverageBadges';
 import { TagPill, TagPillGroup } from '@/components/recommendation/TagPillGroup';
@@ -423,24 +424,31 @@ export function OrderRecommendationPanel({
   return (
     <div className={compact ? 'rounded-md border border-border p-2' : 'rounded-md border border-border p-3'}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-sm font-semibold">{item.customer.name} · 桌 {formatDesk(item.order.deskCode)}</div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            <Badge variant="outline">料理 {item.order.foodTag || '无'}</Badge>
-            <Badge variant="outline">酒水 {item.order.beverageTag || '无'}</Badge>
-            {targetCookerName && (
-              <Badge className="steward-tag-extra">
-                目标厨具 {targetCookerName}
-              </Badge>
-            )}
-            {item.budget && <BudgetBadge budget={item.budget} />}
-            {showDebugDetails && <Badge variant="secondary">{item.order.source}</Badge>}
-          </div>
-          {item.blockedMessages.length > 0 && (
-            <div className="mt-1 text-xs text-muted-foreground">
-              {item.blockedMessages.join('；')}
+        <div className="flex min-w-0 items-start gap-2">
+          <RareGuestAvatar
+            guestId={item.order.guestId}
+            name={item.customer.name || item.order.guestName}
+            size={compact ? 'sm' : 'md'}
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">{item.customer.name} · 桌 {formatDesk(item.order.deskCode)}</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <Badge variant="outline">料理 {item.order.foodTag || '无'}</Badge>
+              <Badge variant="outline">酒水 {item.order.beverageTag || '无'}</Badge>
+              {targetCookerName && (
+                <Badge className="steward-tag-extra">
+                  目标厨具 {targetCookerName}
+                </Badge>
+              )}
+              {item.budget && <BudgetBadge budget={item.budget} />}
+              {showDebugDetails && <Badge variant="secondary">{item.order.source}</Badge>}
             </div>
-          )}
+            {item.blockedMessages.length > 0 && (
+              <div className="mt-1 text-xs text-muted-foreground">
+                {item.blockedMessages.join('；')}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

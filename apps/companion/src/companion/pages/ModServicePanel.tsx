@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { IconTrash } from '@tabler/icons-react';
+import { RareGuestAvatar } from '@/components/RareGuestAvatar';
 import { Badge, Button, Card, CardContent, EmptyRow, EmptyState, InfoLine, ListPanel, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui-kit';
 import { buildAutomationResourceOverview, buildNightBusinessOrderKey } from '@/companion/domain/automation';
 import { sortNightOrderRows, sortNightOrders, sortNormalOrders } from '@/companion/domain/sorting';
@@ -197,11 +198,14 @@ export function ModServicePanel({
               {activeGuests.map((guest) => {
                 const fund = formatGuestFund(guest);
                 return (
-                  <div key={`${guest.deskCode}-${guest.guestId}-${guest.source}`} className="flex items-center justify-between border-b py-2 text-sm last:border-b-0">
-                    <span className="min-w-0 font-medium">
-                      <span>{guest.guestName}</span>
-                      {fund && <span className="ml-1 text-muted-foreground">· 金钱 {fund}</span>}
-                    </span>
+                  <div key={`${guest.deskCode}-${guest.guestId}-${guest.source}`} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <RareGuestAvatar guestId={guest.guestId} name={guest.guestName} size="sm" />
+                      <span className="min-w-0 font-medium">
+                        <span>{guest.guestName}</span>
+                        {fund && <span className="ml-1 text-muted-foreground">· 金钱 {fund}</span>}
+                      </span>
+                    </div>
                     <span className="text-muted-foreground">
                       桌 {formatDesk(guest.deskCode)}
                       {showDebugDetails ? ` · ${guest.source}` : ''}
@@ -220,19 +224,22 @@ export function ModServicePanel({
                 return (
                   <div key={orderKey} className="border-b py-2 text-sm last:border-b-0">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="truncate font-medium" title={order.guestName}>{order.guestName}</span>
-                          <span className="shrink-0 text-muted-foreground">桌 {formatDesk(order.deskCode)}</span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          <Badge variant="outline">
-                            料理 {order.foodTag || '无'}{showDebugDetails ? ` (${order.foodTagId})` : ''}
-                          </Badge>
-                          <Badge variant="outline">
-                            酒水 {order.beverageTag || '无'}{showDebugDetails ? ` (${order.beverageTagId})` : ''}
-                          </Badge>
-                          {showDebugDetails && <Badge variant="secondary">{order.source}</Badge>}
+                      <div className="flex min-w-0 items-start gap-2">
+                        <RareGuestAvatar guestId={order.guestId} name={order.guestName} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="truncate font-medium" title={order.guestName}>{order.guestName}</span>
+                            <span className="shrink-0 text-muted-foreground">桌 {formatDesk(order.deskCode)}</span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            <Badge variant="outline">
+                              料理 {order.foodTag || '无'}{showDebugDetails ? ` (${order.foodTagId})` : ''}
+                            </Badge>
+                            <Badge variant="outline">
+                              酒水 {order.beverageTag || '无'}{showDebugDetails ? ` (${order.beverageTagId})` : ''}
+                            </Badge>
+                            {showDebugDetails && <Badge variant="secondary">{order.source}</Badge>}
+                          </div>
                         </div>
                       </div>
                       <Button
