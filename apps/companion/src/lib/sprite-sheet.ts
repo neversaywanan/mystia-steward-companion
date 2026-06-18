@@ -28,8 +28,8 @@ export function buildSpriteSheetLayout({
   const column = spriteIndex % columns;
   const row = Math.floor(spriteIndex / columns);
   return {
-    height: tileSize * rows,
-    transform: `translate(${-column * tileSize}px, ${-row * tileSize}px)`,
-    width: tileSize * columns,
+    height: `${rows * 100}%`,
+    transform: `translate(${(column / columns) * -100}%, ${(row / rows) * -100}%)`,
+    width: `${columns * 100}%`,
   };
 }

@@ -59,12 +59,12 @@ function RecommendationItem({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
           <span className="text-xs text-muted-foreground">#{index + 1}</span>
-          <span className="font-medium">
+          <span className="text-base font-bold text-foreground">
             {title}
             {titleSuffix}
           </span>
           {badges}
-          {summary && <span className="text-xs text-muted-foreground">{summary}</span>}
+          {summary && <span className="text-sm font-mono text-muted-foreground ml-1">{summary}</span>}
           {inlineMeta}
         </div>
         {favorite && (
@@ -83,7 +83,7 @@ function RecommendationItem({
           </Button>
         )}
       </div>
-      {meta && <div className="mt-1 flex flex-wrap gap-1.5">{meta}</div>}
+      {meta && <div className="mt-1.5">{meta}</div>}
       {children}
     </>
   );
@@ -110,31 +110,7 @@ function RecommendationItem({
   );
 }
 
-function RecommendationMetaBadge({
-  label,
-  value,
-  tone = 'neutral',
-  className,
-}: {
-  label: string;
-  value: string;
-  tone?: RecommendationMetaTone;
-  className?: string;
-}) {
-  const toneClass = {
-    cooker: 'steward-meta-cooker',
-    base: 'steward-meta-base',
-    extra: 'steward-meta-extra',
-    neutral: 'steward-meta-neutral',
-  }[tone];
 
-  return (
-    <span className={composeClassNames('inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs', toneClass, className)}>
-      <span className="shrink-0 font-medium">{label}</span>
-      <span className="min-w-0 truncate" title={value}>{value}</span>
-    </span>
-  );
-}
 
 function RecommendationTagPills({
   tags,
@@ -144,7 +120,7 @@ function RecommendationTagPills({
   return <TagPillGroup tags={tags} matchedTags={matchedTags} className={composeClassNames('mt-1', className)} />;
 }
 
-export { RecommendationItem, RecommendationMetaBadge, RecommendationTagPills };
+export { RecommendationItem, RecommendationTagPills };
 export type {
   RecommendationFavoriteAction,
   RecommendationItemProps,

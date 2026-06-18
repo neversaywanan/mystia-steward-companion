@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 
 import { composeClassNames } from '@/components/ui/style';
-import { Card, CardContent } from '@/components/ui/card';
 
 type StatusTone = 'good' | 'bad' | 'neutral';
 
@@ -30,13 +29,11 @@ function StatusCard({
       : 'text-foreground';
 
   return (
-    <Card className="steward-status-card">
-      <CardContent className="p-3.5">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className={composeClassNames('mt-1 text-lg font-semibold', toneClass)}>{value}</div>
-        <div className="mt-1 truncate text-xs text-muted-foreground" title={detail}>{detail}</div>
-      </CardContent>
-    </Card>
+    <div className="border-l-4 border-l-primary/30 bg-muted/20 p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={composeClassNames('mt-1 font-mono text-xl font-semibold', toneClass)}>{value}</div>
+      <div className="mt-1 truncate text-xs text-muted-foreground" title={detail}>{detail}</div>
+    </div>
   );
 }
 
@@ -44,7 +41,7 @@ function Metric({ label, value }: { label: string; value: number | string }) {
   return (
     <div>
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-base font-semibold">{value}</div>
+      <div className="mt-1 font-mono text-base font-semibold">{value}</div>
     </div>
   );
 }
@@ -87,15 +84,13 @@ function ListPanel({
   className?: string;
 }) {
   return (
-    <Card className={composeClassNames('steward-list-panel min-w-0', className)}>
-      <CardContent className="min-w-0 p-3.5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="min-w-0 text-base font-semibold">{title}</h2>
-          {action}
-        </div>
-        {contentClassName ? <div className={contentClassName}>{children}</div> : children}
-      </CardContent>
-    </Card>
+    <div className={composeClassNames('steward-list-panel min-w-0', className)}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-2">
+        <h2 className="min-w-0 text-base font-semibold">{title}</h2>
+        {action}
+      </div>
+      {contentClassName ? <div className={contentClassName}>{children}</div> : children}
+    </div>
   );
 }
 

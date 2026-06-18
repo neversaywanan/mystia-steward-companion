@@ -43,7 +43,7 @@
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.25rem;
   --companion-background-opacity-percent: 100%;
   --companion-window-opacity-percent: var(--companion-background-opacity-percent);
   --companion-content-opacity: 1;
@@ -392,8 +392,8 @@ html::-webkit-scrollbar-thumb,
 .mantine-Popover-dropdown::-webkit-scrollbar-thumb,
 .mantine-Combobox-dropdown::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border: 2px solid var(--scrollbar-surface-track);
-  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 html::-webkit-scrollbar-thumb:hover,

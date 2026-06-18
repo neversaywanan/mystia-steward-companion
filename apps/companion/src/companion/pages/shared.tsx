@@ -2,7 +2,7 @@ import { PlaceSelect } from '@/components/controls/PlaceSelect';
 import { BeverageSprite } from '@/components/BeverageSprite';
 import { RecipeSprite } from '@/components/RecipeSprite';
 import { RareGuestAvatar } from '@/components/RareGuestAvatar';
-import { RecommendationItem, RecommendationMetaBadge, RecommendationTagPills } from '@/components/RecommendationItem';
+import { RecommendationItem, RecommendationTagPills } from '@/components/RecommendationItem';
 import { CustomerCoverageBadges } from '@/components/recommendation/CustomerCoverageBadges';
 import { TagPill, TagPillGroup } from '@/components/recommendation/TagPillGroup';
 import { Badge, Button, EmptyRow, EmptyState, NumberInput, SegmentedControl, SliderField, SwitchField } from '@/components/ui-kit';
@@ -350,8 +350,14 @@ export function NormalRecipeRow({
       leading={<RecipeSprite recipe={recipe.recipe} />}
       title={recipe.recipe.name}
       summary={`覆盖 ${recipe.totalCoverage} · 成本 ${recipe.ingredientCost} · 利润 ${recipe.profit} · 价格 ${recipe.recipe.price}`}
-      inlineMeta={<RecommendationMetaBadge label="厨具" value={recipe.recipe.cooker || '未知'} tone="cooker" />}
-      meta={<RecommendationMetaBadge label="基础配方" value={baseRecipe} tone="base" />}
+      meta={(
+        <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-2 gap-y-0.5 text-sm w-full">
+          <span className="text-xs text-muted-foreground">厨具</span>
+          <span className="truncate font-medium text-amber-700 dark:text-amber-400">{recipe.recipe.cooker || '未知'}</span>
+          <span className="text-xs text-muted-foreground">配方</span>
+          <span className="truncate font-medium text-emerald-700 dark:text-emerald-400">{baseRecipe}</span>
+        </div>
+      )}
     >
       <div className="mt-1 flex flex-wrap gap-1">
         {recipe.matchedTags.map((tag) => <TagPill key={tag} tone="match">{tag}</TagPill>)}
@@ -563,12 +569,15 @@ export function RecipeRecommendationRow({
         </>
       )}
       summary={`加料 ${recipe.extraIngredients.length} 项 · 成本 ${totalCost}`}
-      inlineMeta={<RecommendationMetaBadge label="厨具" value={recipe.recipe.cooker || '未知'} tone="cooker" />}
       meta={(
-        <>
-          <RecommendationMetaBadge label="基础配方" value={baseRecipe} tone="base" />
-          <RecommendationMetaBadge label="加料" value={extras} tone="extra" />
-        </>
+        <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-2 gap-y-0.5 text-sm w-full">
+          <span className="text-xs text-muted-foreground">厨具</span>
+          <span className="truncate font-medium text-amber-700 dark:text-amber-400">{recipe.recipe.cooker || '未知'}</span>
+          <span className="text-xs text-muted-foreground">加料</span>
+          <span className="truncate font-medium text-sky-700 dark:text-sky-400">{extras}</span>
+          <span className="text-xs text-muted-foreground">配方</span>
+          <span className="truncate font-medium text-emerald-700 dark:text-emerald-400">{baseRecipe}</span>
+        </div>
       )}
       compact={compact}
       favorite={onToggleFavorite ? {
