@@ -10,25 +10,35 @@ const RUMIA_AVATAR_URL = new URL('../assets/rare-guests/rumia.svg', import.meta.
 const MOKOU_AVATAR_URL = new URL('../assets/rare-guests/mokou.svg', import.meta.url).href;
 const REMILIA_AVATAR_URL = new URL('../assets/rare-guests/remilia.svg', import.meta.url).href;
 
-const AVATAR_PATH_BY_GUEST_ID = new Map<number, string>([
-  [1, RUMIA_AVATAR_URL],
-  [22, REMILIA_AVATAR_URL],
-  [2001, MOKOU_AVATAR_URL],
-  [4008, REMILIA_AVATAR_URL],
-]);
+const RARE_GUEST_AVATARS = [
+  {
+    avatarPath: RUMIA_AVATAR_URL,
+    guestIds: [1, 1002],
+    names: ['露米娅', 'rumia'],
+  },
+  {
+    avatarPath: MOKOU_AVATAR_URL,
+    guestIds: [2001],
+    names: ['藤原妹红', 'mokou', 'fujiwara mokou', 'fujiwara no mokou'],
+  },
+  {
+    avatarPath: REMILIA_AVATAR_URL,
+    guestIds: [22, 4008],
+    names: ['蕾米莉亚', '蕾米莉亚·斯卡蕾特', 'remilia', 'remilia scarlet'],
+  },
+] as const;
 
-const AVATAR_PATH_BY_GUEST_NAME = new Map<string, string>([
-  ['露米娅', RUMIA_AVATAR_URL],
-  ['rumia', RUMIA_AVATAR_URL],
-  ['藤原妹红', MOKOU_AVATAR_URL],
-  ['mokou', MOKOU_AVATAR_URL],
-  ['fujiwara mokou', MOKOU_AVATAR_URL],
-  ['fujiwara no mokou', MOKOU_AVATAR_URL],
-  ['蕾米莉亚', REMILIA_AVATAR_URL],
-  ['蕾米莉亚·斯卡蕾特', REMILIA_AVATAR_URL],
-  ['remilia', REMILIA_AVATAR_URL],
-  ['remilia scarlet', REMILIA_AVATAR_URL],
-]);
+const AVATAR_PATH_BY_GUEST_NAME = new Map<string, string>(
+  RARE_GUEST_AVATARS.flatMap(({ avatarPath, names }) => (
+    names.map((name) => [normalizeGuestName(name), avatarPath] as const)
+  )),
+);
+
+const AVATAR_PATH_BY_GUEST_ID = new Map<number, string>(
+  RARE_GUEST_AVATARS.flatMap(({ avatarPath, guestIds }) => (
+    guestIds.map((guestId) => [guestId, avatarPath] as const)
+  )),
+);
 
 export function resolveRareGuestAvatar({
   guestId,
@@ -42,11 +52,9 @@ export function resolveRareGuestAvatar({
   const normalizedGuestId = typeof guestId === 'number' && Number.isFinite(guestId)
     ? Math.trunc(guestId)
     : null;
-  const avatarPath = normalizedGuestId === null
-    ? AVATAR_PATH_BY_GUEST_NAME.get(normalizedName) ?? null
-    : AVATAR_PATH_BY_GUEST_ID.get(normalizedGuestId)
-      ?? AVATAR_PATH_BY_GUEST_NAME.get(normalizedName)
-      ?? null;
+  const avatarPath = AVATAR_PATH_BY_GUEST_NAME.get(normalizedName)
+    ?? (normalizedGuestId === null ? null : AVATAR_PATH_BY_GUEST_ID.get(normalizedGuestId))
+    ?? null;
   const seed = normalizedGuestId === null ? hashName(normalizedName) : Math.abs(normalizedGuestId);
 
   return {
@@ -58,6 +66,7 @@ export function resolveRareGuestAvatar({
 
 function normalizeGuestName(name: string): string {
   return name
+    .normalize('NFKC')
     .trim()
     .replaceAll('_', ' ')
     .replace(/\s+/g, ' ')

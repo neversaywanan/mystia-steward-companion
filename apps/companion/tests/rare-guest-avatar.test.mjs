@@ -5,13 +5,18 @@ import test from 'node:test';
 import { resolveRareGuestAvatar } from '../src/lib/rare-guest-avatar.ts';
 
 test('known guest ids resolve bundled avatar artwork', () => {
-  assert.match(resolveRareGuestAvatar({ guestId: 1, name: '露米娅' }).avatarPath ?? '', /rumia\.svg$/);
-  assert.match(resolveRareGuestAvatar({ guestId: 2001, name: '藤原妹红' }).avatarPath ?? '', /mokou\.svg$/);
-  assert.match(resolveRareGuestAvatar({ guestId: 4008, name: '蕾米莉亚' }).avatarPath ?? '', /remilia\.svg$/);
+  assert.match(resolveRareGuestAvatar({ guestId: 1002, name: 'Guest 1002' }).avatarPath ?? '', /rumia\.svg$/);
+  assert.match(resolveRareGuestAvatar({ guestId: 2001, name: 'Guest 2001' }).avatarPath ?? '', /mokou\.svg$/);
+  assert.match(resolveRareGuestAvatar({ guestId: 22, name: 'Guest 22' }).avatarPath ?? '', /remilia\.svg$/);
 });
 
 test('known names resolve artwork when runtime id is unavailable', () => {
   assert.match(resolveRareGuestAvatar({ guestId: null, name: '  蕾米莉亚  ' }).avatarPath ?? '', /remilia\.svg$/);
+});
+
+test('known names remain authoritative when runtime ids use a different catalog namespace', () => {
+  assert.match(resolveRareGuestAvatar({ guestId: 1, name: '藤原妹红' }).avatarPath ?? '', /mokou\.svg$/);
+  assert.match(resolveRareGuestAvatar({ guestId: 1002, name: '露米娅' }).avatarPath ?? '', /rumia\.svg$/);
 });
 
 test('runtime identity aliases resolve the corresponding bundled avatar', () => {
