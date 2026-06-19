@@ -39,9 +39,9 @@ test('sprite sheet geometry covers every mapped item', () => {
 
 test('sprite sheet layout scales and offsets the selected source cell', () => {
   assert.deepEqual(buildSpriteSheetLayout({ columns: 10, rows: 20, spriteIndex: 189, tileSize: 40 }), {
-    height: 800,
-    transform: 'translate(-360px, -720px)',
-    width: 400,
+    height: '2000%',
+    transform: 'translate(-90%, -90%)',
+    width: '1000%',
   });
 });
 
