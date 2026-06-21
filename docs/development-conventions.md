@@ -60,7 +60,7 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1
 ## GitHub Actions 与发布
 
 - `.github/workflows/ci.yml` 在 pull request 和 `main` push 时运行前端 lint、测试和 build；手动触发时使用私有引用包执行完整 Windows 构建。
-- 全量 workflow 只上传临时 Artifact，不自动创建 tag 或 Release；引用 DLL 不得进入当前仓库或构建产物。
+- 全量 workflow 只上传临时 Artifact，不自动创建 tag 或 Release；Mod 编译依赖通过 NuGet 自动恢复。
 - 版本发布采用本机 Windows 构建后通过 `gh` 上传，详细说明见 `docs/local-release.md`。
 - 不要主动创建 tag 或发布 Release；版本构建必须等待用户明确指令。
 

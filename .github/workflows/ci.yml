@@ -6,12 +6,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      reference_release_tag:
-        description: Private build-reference release tag
-        required: true
-        default: build-references
-        type: string
 
 permissions:
   contents: read
@@ -70,10 +64,6 @@ jobs:
     timeout-minutes: 45
     env:
       CARGO_TERM_COLOR: always
-      MYSTIA_REFERENCE_REPOSITORY: ${{ vars.MYSTIA_REFERENCE_REPOSITORY }}
-      MYSTIA_REFERENCE_BUNDLE_SHA256: ${{ vars.MYSTIA_REFERENCE_BUNDLE_SHA256 }}
-      MYSTIA_REFERENCE_RELEASE_TAG: ${{ inputs.reference_release_tag }}
-      GH_TOKEN: ${{ secrets.MYSTIA_REFERENCE_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -123,28 +113,6 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('apps/companion/src-tauri/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
-      - name: Validate reference configuration
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:MYSTIA_REFERENCE_REPOSITORY)) {
-            throw "Missing repository variable MYSTIA_REFERENCE_REPOSITORY (expected owner/private-repository)."
-          }
-          if ($env:MYSTIA_REFERENCE_BUNDLE_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
-            throw "Missing or invalid repository variable MYSTIA_REFERENCE_BUNDLE_SHA256."
-          }
-          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
-            throw "Missing Actions secret MYSTIA_REFERENCE_TOKEN."
-          }
-
-      - name: Download verified build references
-        shell: pwsh
-        run: |
-          ./mods/bepinex/tools/download-build-references.ps1 `
-            -Repository $env:MYSTIA_REFERENCE_REPOSITORY `
-            -Tag $env:MYSTIA_REFERENCE_RELEASE_TAG `
-            -ExpectedSha256 $env:MYSTIA_REFERENCE_BUNDLE_SHA256 `
-            -DestinationDir "$env:RUNNER_TEMP/mystia-build-references"
-
       - name: Install dependencies
         shell: pwsh
         run: corepack pnpm install --frozen-lockfile
@@ -153,8 +121,7 @@ jobs:
         shell: pwsh
         run: |
           ./mods/bepinex/tools/build-release.ps1 `
-            -SkipInstall `
-            -ReferenceDir "$env:RUNNER_TEMP/mystia-build-references"
+            -SkipInstall
 
       - name: Upload complete build
         uses: actions/upload-artifact@v7

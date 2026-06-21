@@ -9,7 +9,6 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipVersionCheck,
     [switch]$Clobber,
-    [string]$ReferenceDir = "",
     [string]$Repo = "blockshy/mystia-steward-companion"
 )
 
@@ -169,11 +168,6 @@ try {
             "-File",
             $BuildScript
         )
-
-        if (-not [string]::IsNullOrWhiteSpace($ReferenceDir)) {
-            $BuildArgs += "-ReferenceDir"
-            $BuildArgs += $ReferenceDir
-        }
 
         $Pwsh = Get-PwshCommand
         Invoke-Checked -FilePath $Pwsh -Arguments $BuildArgs

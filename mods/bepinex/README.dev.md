@@ -9,8 +9,7 @@
 - `src/Ui/`：伴随窗口控制器、运行时循环和快照缓存。
 - `src/Plugin/`：BepInEx 入口、配置和伴随窗口启动逻辑。
 - `src/LocalApi/`：本地回环 API，供 Tauri 伴随窗口读取实时状态。
-- `References/`：本机编译引用 DLL，不提交到仓库。
-- `tools/`：前置检查、构建和打包脚本。
+- `tools/`：构建和打包脚本。
 
 运行时读取说明见 [docs/RUNTIME_PROVIDER_NOTES.md](docs/RUNTIME_PROVIDER_NOTES.md)。
 
@@ -23,7 +22,6 @@ Windows 上通常需要：
 - PowerShell 7。
 - Rust stable、Microsoft C++ Build Tools 2022 或 Visual Studio “使用 C++ 的桌面开发”组件。
 - Microsoft Edge WebView2 Runtime。
-- 已安装并启动过一次 BepInEx Unity IL2CPP 的游戏目录。
 
 推荐初始化命令：
 
@@ -41,36 +39,7 @@ sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev libayatana-appindicator
 
 ## 构建引用
 
-本项目不提交 BepInEx 和 Unity DLL。构建前只需要把 BepInEx、Il2CppInterop 和 Unity 基础引用复制到 `References/`，不需要也不应该复制额外的游戏业务 DLL：
-
-```text
-mods/bepinex/
-  References/
-    BepInEx.Core.dll
-    BepInEx.Unity.IL2CPP.dll
-    0Harmony.dll
-    Il2CppInterop.Runtime.dll
-    Il2Cppmscorlib.dll
-    UnityEngine.CoreModule.dll
-    UnityEngine.InputLegacyModule.dll
-```
-
-常见来源：
-
-- `游戏根目录/BepInEx/core/`
-- `游戏根目录/BepInEx/interop/`
-
-复制完成后运行前置检查：
-
-```powershell
-pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\preflight.ps1
-```
-
-Git Bash 可运行：
-
-```bash
-bash mods/bepinex/tools/preflight.sh
-```
+Mod 使用固定版本的 `BepInEx.Unity.IL2CPP` 与 `UnityEngine.Modules` NuGet 包，只获取编译资产，不复制运行时依赖到发布包。依赖恢复不需要安装游戏，也不需要维护 `References/` 目录。
 
 ## 一键构建
 
@@ -80,13 +49,7 @@ PowerShell 7 从仓库根目录执行：
 pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1
 ```
 
-该脚本会依次执行 `pnpm install --frozen-lockfile`、`preflight.ps1`、运行时数据模式提示、伴随窗口前端构建、Tauri 伴随窗口构建、Mod DLL 构建和安装包生成。
-脚本开始时会先检查 `mods\bepinex\References` 中的 BepInEx/Unity 引用 DLL。若引用 DLL 放在其他目录，可显式传入：
-
-```powershell
-pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1 `
-  -ReferenceDir "D:\path\to\mystia-steward-companion-references"
-```
+该脚本会依次执行 `pnpm install --frozen-lockfile`、伴随窗口前端构建、Tauri 伴随窗口构建、Mod DLL 构建和安装包生成。
 
 常用增量构建：
 
@@ -200,7 +163,7 @@ GitHub Release 只上传以下资产：
 发布前检查：
 
 - `gh auth status` 能正常显示已登录账号。
-- `mods\bepinex\References` 中 8 个编译引用 DLL 齐全。
+- NuGet 包源可正常访问。
 - 已运行 `mods\bepinex\tools\set-version.ps1` 并提交版本号变更。
 - 用户可见功能和开发约束已同步到 README 或 `docs/`。
 - 若发布新版本，先提交版本号变更并创建或移动对应 tag，例如 `v1.0.1`。
@@ -245,16 +208,6 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\publish-release.ps1 `
 ```
 
 脚本会先执行完整构建，再用 `gh release create` 创建 Release 并上传 zip 与 checksums。
-
-如果引用 DLL 不在 `mods\bepinex\References`，传入 `-ReferenceDir`：
-
-```powershell
-pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\publish-release.ps1 `
-  -Tag v1.0.1 `
-  -Title "v1.0.1" `
-  -Notes "版本更新说明" `
-  -ReferenceDir "D:\path\to\mystia-steward-companion-references"
-```
 
 ### 更新已有版本资产
 
@@ -392,14 +345,13 @@ http://127.0.0.1:32145
 
 ## 调试建议
 
-- `preflight.ps1` 报 DLL 缺失：先启动一次已安装 BepInEx 的游戏，再从 `BepInEx/core` 和 `BepInEx/interop` 复制所需引用。
-- 构建报 `Il2Cppmscorlib` 缺失：从 `游戏根目录/BepInEx/interop/Il2Cppmscorlib.dll` 复制到 `References/`。
+- NuGet 恢复失败：检查 nuget.org、`nuget.bepinex.dev` 和 `nuget.samboy.dev` 是否可访问。
 - PowerShell 执行 `bash ...` 报 WSL `/bin/bash` 不存在：在 Windows 下改用对应 `.ps1` 脚本。
 - 运行时数据不可用：查看设置页场景名、扫描状态和 `BepInEx/LogOutput.log`。
 - `经营中` 没有稀客或点单：查看 `经营扫描 / Scan status`；如果 `manager=missing`，需要核对夜间经营管理器字段；如果 `guests>0` 但 `orders=0`，提供经营诊断中的 `Sources`、`Candidates` 和 `RecentRuntimeParseFailures`。
 
 ## 已知限制
 
-- 构建依赖本机 `References/` 中的 BepInEx、Il2CppInterop 和 Unity DLL；这些 DLL 不提交到仓库。
+- 构建使用固定版本的 NuGet 编译资产；运行时仍由用户游戏目录中的 BepInEx 和 IL2CPP interop 提供实际程序集。
 - 运行时反射依赖游戏版本中的类型和字段名；如果游戏更新导致字段变化，需要核对并调整 provider 中的运行时类型名、字段名和方法名。
 - 伴随窗口是唯一用户界面；游戏内不再提供备用 IMGUI 面板。

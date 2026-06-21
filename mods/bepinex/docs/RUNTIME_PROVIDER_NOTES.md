@@ -2,7 +2,7 @@
 
 当前 Mod 默认使用 `RuntimeReflectionRecommendationStateProvider`。它不在构建期引用额外的游戏业务 DLL，而是在游戏运行时通过反射查找 BepInEx 已加载的 IL2CPP interop 类型，并直接读取当前内存中的运行时数据。
 
-`References/` 只放构建所需的 BepInEx、Il2CppInterop 和 Unity 基础引用，不放额外的游戏业务 DLL。
+构建期只使用 BepInEx、Il2CppInterop 和 Unity 基础 NuGet 包，不引用游戏业务 DLL。
 
 ## 读取流程
 
