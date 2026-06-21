@@ -8,11 +8,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <RestoreAdditionalProjectSources>https://api.nuget.org/v3/index.json;https://nuget.bepinex.dev/v3/index.json;https://nuget.samboy.dev/v3/index.json</RestoreAdditionalProjectSources>
     <UnityReferenceDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)unity-references</UnityReferenceDir>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="src/**/*.cs" />
     <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.764" IncludeAssets="compile" />
     <PackageReference Include="UnityEngine.Modules" Version="2021.3.33" ExcludeAssets="compile;runtime" GeneratePathProperty="true" />
     <Reference Include="UnityEngine.CoreModule">
