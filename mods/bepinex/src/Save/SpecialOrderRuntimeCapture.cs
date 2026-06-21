@@ -31,6 +31,7 @@ public static class SpecialOrderRuntimeCapture
     private static int _capturedOrders;
     private static int _parseFailures;
     private static long _changeVersion;
+    private static long _removalVersion;
     private static string _lastCapture = "";
     private static string _lastParseFailure = "";
     private static string _lastOrderShape = "";
@@ -42,6 +43,17 @@ public static class SpecialOrderRuntimeCapture
             lock (SyncRoot)
             {
                 return _changeVersion;
+            }
+        }
+    }
+
+    public static long RemovalVersion
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                return _removalVersion;
             }
         }
     }
@@ -77,7 +89,13 @@ public static class SpecialOrderRuntimeCapture
         var now = DateTime.UtcNow;
         lock (SyncRoot)
         {
-            Orders.RemoveAll(order => now - order.CapturedAt > maxAge);
+            var removed = Orders.RemoveAll(order => now - order.CapturedAt > maxAge);
+            if (removed > 0)
+            {
+                _changeVersion++;
+                _removalVersion++;
+                _status = BuildStatusLocked();
+            }
             return Orders
                 .OrderBy(order => order.FirstCapturedAt)
                 .ThenBy(order => order.CapturedAt)
@@ -94,6 +112,7 @@ public static class SpecialOrderRuntimeCapture
             if (removed > 0)
             {
                 _changeVersion++;
+                _removalVersion++;
             }
 
             _status = BuildStatusLocked();
@@ -109,6 +128,7 @@ public static class SpecialOrderRuntimeCapture
             Orders.Clear();
             _lastCapture = $"cleared: {reason}";
             _changeVersion++;
+            _removalVersion++;
             _status = BuildStatusLocked();
         }
     }
@@ -145,7 +165,7 @@ public static class SpecialOrderRuntimeCapture
             PatchMethod(_harmony, SpecialGuestsControllerTypeName, "PostGenerateOrder", 2, false, null, nameof(OnGeneratedSpecialOrder), patchedNow, missing);
             PatchMethod(_harmony, GuestsManagerTypeName, "SetManualControllerOrderInternal", 3, false, null, nameof(OnManualControllerOrderSet), patchedNow, missing);
             PatchMethod(_harmony, GuestsManagerTypeName, "EvaulateManualOrder", 2, false, nameof(OnManualOrderEvaluating), null, patchedNow, missing);
-            PatchMethod(_harmony, GuestsManagerTypeName, "EndDlc4SpecialManualOrder", 1, false, nameof(OnManualOrderEnded), null, patchedNow, missing);
+            PatchMethod(_harmony, GuestsManagerTypeName, "EndDlc4SpecialManualOrder", 1, false, nameof(OnManualOrderEnding), nameof(OnManualOrderEnded), patchedNow, missing);
             PatchMethod(_harmony, GuestsManagerTypeName, "AddToOrder", 1, false, nameof(OnOrderAdded), null, patchedNow, missing);
             PatchMethod(_harmony, GuestsManagerTypeName, "RemoveFromOrder", 1, false, nameof(OnOrderRemoved), null, patchedNow, missing);
             PatchMethod(_harmony, OrderControllerTypeName, "AddOrder", 1, true, nameof(OnOrderAdded), null, patchedNow, missing);
@@ -280,14 +300,15 @@ public static class SpecialOrderRuntimeCapture
         }
     }
 
-    private static void OnManualOrderEnded(object __0)
+    private static void OnManualOrderEnding(object __0, out CapturedRuntimeSpecialOrder? __state)
+    {
+        __state = ParseControllerCurrentOrder(__0, "ManualOrderEnding");
+    }
+
+    private static void OnManualOrderEnded(CapturedRuntimeSpecialOrder? __state)
     {
         lock (SyncRoot) _removeCallbacks++;
-        var order = ParseControllerCurrentOrder(__0, "ManualOrderEnd");
-        if (order is { IsFulfilled: true })
-        {
-            RemoveOrder(order with { CaptureSource = "ManualOrderEnd" });
-        }
+        RemoveOrder(__state is null ? null : __state with { CaptureSource = "ManualOrderEnd" });
     }
 
     private static void AddOrder(CapturedRuntimeSpecialOrder? order)
@@ -320,7 +341,11 @@ public static class SpecialOrderRuntimeCapture
         {
             var removed = Orders.RemoveAll(existing => IsSameOrderRemovalMatch(existing, order));
             _lastCapture = $"removed: desk={order.DeskCode}, guestId={order.GuestId?.ToString() ?? ""}";
-            if (removed > 0) _changeVersion++;
+            if (removed > 0)
+            {
+                _changeVersion++;
+                _removalVersion++;
+            }
             _status = BuildStatusLocked();
         }
     }

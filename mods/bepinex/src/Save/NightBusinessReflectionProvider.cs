@@ -81,18 +81,14 @@ public sealed class NightBusinessReflectionProvider
             errors.Add($"runtime capture: {ex.Message}");
         }
 
-        var preferRuntimeCapturedOrders = _diagnostics == null && runtimeOrders.Count > 0;
-        sourceStats.Add(preferRuntimeCapturedOrders ? "OrderReadMode=RuntimeCapture" : "OrderReadMode=Reflection");
+        sourceStats.Add("OrderReadMode=Reflection+RuntimeCapture");
 
         try
         {
             var servePanelContexts = Measure("rare.servePanel.contexts", () => ReadServePanelContexts().ToList());
             sourceStats.Add($"ServePanel={servePanelContexts.Count}");
             guests.AddRange(Measure("rare.servePanel.guests", () => ReadServePanelRareGuests(servePanelContexts).ToList()));
-            if (!preferRuntimeCapturedOrders)
-            {
-                orders.AddRange(Measure("rare.servePanel.orders", () => ReadServePanelOrders(servePanelContexts).ToList()));
-            }
+            orders.AddRange(Measure("rare.servePanel.orders", () => ReadServePanelOrders(servePanelContexts).ToList()));
         }
         catch (Exception ex)
         {
@@ -100,31 +96,28 @@ public sealed class NightBusinessReflectionProvider
             errors.Add($"serve panel: {ex.Message}");
         }
 
-        if (!preferRuntimeCapturedOrders)
+        try
         {
-            try
-            {
-                var orderControllerOrders = Measure("rare.orderController", () => ReadOrderControllerOrders().ToList());
-                sourceStats.Add($"OrderController={orderControllerOrders.Count}");
-                orders.AddRange(orderControllerOrders);
-            }
-            catch (Exception ex)
-            {
-                sourceStats.Add("OrderController=err");
-                errors.Add($"order controller: {ex.Message}");
-            }
+            var orderControllerOrders = Measure("rare.orderController", () => ReadOrderControllerOrders().ToList());
+            sourceStats.Add($"OrderController={orderControllerOrders.Count}");
+            orders.AddRange(orderControllerOrders);
+        }
+        catch (Exception ex)
+        {
+            sourceStats.Add("OrderController=err");
+            errors.Add($"order controller: {ex.Message}");
+        }
 
-            try
-            {
-                var hudOrders = Measure("rare.hud", () => ReadHudOrders().ToList());
-                sourceStats.Add($"HUD={hudOrders.Count}");
-                orders.AddRange(hudOrders);
-            }
-            catch (Exception ex)
-            {
-                sourceStats.Add("HUD=err");
-                errors.Add($"HUD orders: {ex.Message}");
-            }
+        try
+        {
+            var hudOrders = Measure("rare.hud", () => ReadHudOrders().ToList());
+            sourceStats.Add($"HUD={hudOrders.Count}");
+            orders.AddRange(hudOrders);
+        }
+        catch (Exception ex)
+        {
+            sourceStats.Add("HUD=err");
+            errors.Add($"HUD orders: {ex.Message}");
         }
 
         var managerStatus = Measure("manager.status", ReadManagerStatus);
@@ -137,10 +130,7 @@ public sealed class NightBusinessReflectionProvider
                 var controllers = Measure($"controllers.{source.Source}", () => ReadManagerControllers(source.MemberName).ToList());
                 sourceStats.Add($"{source.Source}={controllers.Count}");
                 guests.AddRange(Measure($"rare.guests.{source.Source}", () => ReadRareGuests(controllers, source.Source).ToList()));
-                if (!preferRuntimeCapturedOrders)
-                {
-                    orders.AddRange(Measure($"rare.orders.{source.Source}", () => ReadControllerOrders(controllers, source.Source).ToList()));
-                }
+                orders.AddRange(Measure($"rare.orders.{source.Source}", () => ReadControllerOrders(controllers, source.Source).ToList()));
             }
             catch (Exception ex)
             {
@@ -154,10 +144,7 @@ public sealed class NightBusinessReflectionProvider
             var queuedControllers = Measure("controllers.Queue", () => ReadQueuedControllers().ToList());
             sourceStats.Add($"Queue={queuedControllers.Count}");
             guests.AddRange(Measure("rare.guests.Queue", () => ReadRareGuests(queuedControllers, "Queue").ToList()));
-            if (!preferRuntimeCapturedOrders)
-            {
-                orders.AddRange(Measure("rare.orders.Queue", () => ReadControllerOrders(queuedControllers, "Queue").ToList()));
-            }
+            orders.AddRange(Measure("rare.orders.Queue", () => ReadControllerOrders(queuedControllers, "Queue").ToList()));
         }
         catch (Exception ex)
         {
@@ -168,7 +155,6 @@ public sealed class NightBusinessReflectionProvider
         var activeGuests = Measure("deduplicate.guests", () => DeduplicateGuests(guests));
         var rawLiveOrders = orders.ToList();
         var acceptedRuntimeOrders = new List<NightBusinessOrder>();
-        var reflectionFallbackOrders = new List<NightBusinessOrder>();
         if (runtimeOrders.Count > 0)
         {
             acceptedRuntimeOrders = Measure("runtimeCapture.accept", () => ReadRuntimeCapturedOrders(runtimeOrders, activeGuests).ToList());
@@ -176,18 +162,7 @@ public sealed class NightBusinessReflectionProvider
             sourceStats.Add($"RuntimeCaptureStatus={SpecialOrderRuntimeCapture.Status}");
             sourceStats.Add($"UiPinning={RuntimeUiPinningService.Status}");
             orders.AddRange(acceptedRuntimeOrders);
-            if (preferRuntimeCapturedOrders && acceptedRuntimeOrders.Count < runtimeOrders.Count)
-            {
-                reflectionFallbackOrders = Measure(
-                    "runtimeCapture.reflectionFallback",
-                    () => ReadReflectionFallbackOrders(sourceStats, errors).ToList());
-                sourceStats.Add($"ReflectionFallback={reflectionFallbackOrders.Count}");
-                orders.AddRange(reflectionFallbackOrders);
-            }
-            else
-            {
-                sourceStats.Add("ReflectionFallback=skipped");
-            }
+            sourceStats.Add("ReflectionFallback=not-needed");
         }
         else
         {
@@ -224,6 +199,7 @@ public sealed class NightBusinessReflectionProvider
             PlaceLabel = placeLabel,
             ActiveRareGuests = activeGuests,
             Orders = activeOrders,
+            OrderRemovalVersion = SpecialOrderRuntimeCapture.RemovalVersion,
             Source = $"Night scene live orders; {managerStatus}; {queueStatus}; {string.Join("; ", sourceStats)}; guests={activeGuests.Count}; orders={activeOrders.Count}",
             Error = errors.Count == 0 ? null : string.Join("; ", errors),
         };
@@ -316,78 +292,6 @@ public sealed class NightBusinessReflectionProvider
         {
             // Diagnostics must never affect gameplay or recommendation refreshes.
         }
-    }
-
-    private IReadOnlyList<NightBusinessOrder> ReadReflectionFallbackOrders(
-        ICollection<string> sourceStats,
-        ICollection<string> errors)
-    {
-        var result = new List<NightBusinessOrder>();
-
-        try
-        {
-            var servePanelContexts = Measure("fallback.rare.servePanel.contexts", () => ReadServePanelContexts().ToList());
-            sourceStats.Add($"FallbackServePanel={servePanelContexts.Count}");
-            result.AddRange(Measure("fallback.rare.servePanel.orders", () => ReadServePanelOrders(servePanelContexts).ToList()));
-        }
-        catch (Exception ex)
-        {
-            sourceStats.Add("FallbackServePanel=err");
-            errors.Add($"fallback serve panel: {ex.Message}");
-        }
-
-        try
-        {
-            var orderControllerOrders = Measure("fallback.rare.orderController", () => ReadOrderControllerOrders().ToList());
-            sourceStats.Add($"FallbackOrderController={orderControllerOrders.Count}");
-            result.AddRange(orderControllerOrders);
-        }
-        catch (Exception ex)
-        {
-            sourceStats.Add("FallbackOrderController=err");
-            errors.Add($"fallback order controller: {ex.Message}");
-        }
-
-        try
-        {
-            var hudOrders = Measure("fallback.rare.hud", () => ReadHudOrders().ToList());
-            sourceStats.Add($"FallbackHUD={hudOrders.Count}");
-            result.AddRange(hudOrders);
-        }
-        catch (Exception ex)
-        {
-            sourceStats.Add("FallbackHUD=err");
-            errors.Add($"fallback HUD orders: {ex.Message}");
-        }
-
-        foreach (var source in ManagerControllerSources)
-        {
-            try
-            {
-                var controllers = Measure($"fallback.controllers.{source.Source}", () => ReadManagerControllers(source.MemberName).ToList());
-                sourceStats.Add($"Fallback{source.Source}={controllers.Count}");
-                result.AddRange(Measure($"fallback.rare.orders.{source.Source}", () => ReadControllerOrders(controllers, source.Source).ToList()));
-            }
-            catch (Exception ex)
-            {
-                sourceStats.Add($"Fallback{source.Source}=err");
-                errors.Add($"fallback {source.Source}: {ex.Message}");
-            }
-        }
-
-        try
-        {
-            var queuedControllers = Measure("fallback.controllers.Queue", () => ReadQueuedControllers().ToList());
-            sourceStats.Add($"FallbackQueue={queuedControllers.Count}");
-            result.AddRange(Measure("fallback.rare.orders.Queue", () => ReadControllerOrders(queuedControllers, "Queue").ToList()));
-        }
-        catch (Exception ex)
-        {
-            sourceStats.Add("FallbackQueue=err");
-            errors.Add($"fallback Queue: {ex.Message}");
-        }
-
-        return result;
     }
 
     private IEnumerable<NightBusinessOrder> ReadOrderControllerOrders()
@@ -624,6 +528,12 @@ public sealed class NightBusinessReflectionProvider
             return null;
         }
 
+        if (IsRuntimeOrderFulfilled(readableOrder))
+        {
+            RecordCandidate("Order", source, accepted: false, "order is fulfilled", () => DescribeOrderCandidate(readableOrder, controller));
+            return null;
+        }
+
         var now = DateTime.UtcNow;
 
         var specialGuest = GetMemberValue(readableOrder, "SpecialGuests")
@@ -830,9 +740,24 @@ public sealed class NightBusinessReflectionProvider
         DateTime nowUtc)
     {
         if (!HasCapturedOrderDetails(captured)) return false;
-        if (MatchesActiveGuest(order, activeGuests)) return true;
+        if (captured.IsFulfilled || IsCapturedRuntimeOrderFulfilled(captured)) return false;
         if (IsCapturedRuntimeOrderStillLive(captured)) return true;
+        if (MatchesActiveGuest(order, activeGuests)) return true;
         return nowUtc - captured.CapturedAt <= UnmatchedCapturedOrderGrace;
+    }
+
+    private static bool IsCapturedRuntimeOrderFulfilled(CapturedRuntimeSpecialOrder captured)
+    {
+        if (captured.OrderObject == null) return false;
+
+        try
+        {
+            return IsRuntimeOrderFulfilled(captured.OrderObject);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool HasCapturedOrderDetails(CapturedRuntimeSpecialOrder captured)

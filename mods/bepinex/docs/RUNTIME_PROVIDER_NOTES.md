@@ -36,7 +36,7 @@
 
 `NightBusinessReflectionProvider` 会优先读取 auto-property backing field，并在普通 `IEnumerable` 不可用时通过反射调用 `GetEnumerator()`、`MoveNext()` 和 `Current` 枚举 IL2CPP 集合。`NightBusinessContext.Source` 会记录扫描摘要，例如 `OrderController=1; ServePanel=1; manager=ok; Presented=1; Desk=0; Queue=1; guests=1; orders=1`，用于判断是管理器未找到、集合为空，还是只缺少订单数据。如果当前游戏版本字段名变化，优先核对以上路径；无法映射稀客 ID 时，检查运行时固定数据日志中的 `runtime-static-data.log` 和 `runtime-guests.log`。
 
-运行时捕获订单维护 `SpecialOrderRuntimeCapture.ChangeVersion`。当订单新增、合并或移除时，UI 控制器会在 Unity 主线程等待 0.2 秒防抖后强制刷新经营数据并发布本地 API 快照；基础运行时库存仍按 `AutoRefreshSeconds` 慢刷新，避免恢复高频反射扫描导致掉帧。伴随窗口在 `经营中` 和稀客专注模式下以 750ms 轮询缓存快照，其他页面保持 2 秒。
+运行时捕获订单维护 `SpecialOrderRuntimeCapture.ChangeVersion`。当订单新增、合并或移除时，UI 控制器会在 Unity 主线程等待 0.2 秒防抖后强制刷新经营数据并发布本地 API 快照；基础运行时库存仍按 `AutoRefreshSeconds` 慢刷新。经营订单刷新会合并捕获缓存与完整反射来源，其分项耗时记录在 `performanceMs`，不得用跳过来源的方式换取性能。伴随窗口在 `经营中` 和稀客专注模式下以 750ms 轮询缓存快照，其他页面保持 2 秒。
 
 启用经营诊断后，稀客别名快照会写入独立日志 `runtime-static-data.log`，默认路径为 `BepInEx/config/MystiaStewardCompanion/runtime-static-data.log`。如果用户配置了自定义经营诊断日志路径，则该静态日志写入同一目录。日志会标记 `aliasSource`，用于区分固定映射、运行时同名归一化、直接本地 ID 和手工兜底；内容只在快照变化时追加，便于排查事件稀客别名而不污染逐帧经营诊断。
 

@@ -13,6 +13,7 @@ $DistRoot = Join-Path $RootDir "dist"
 $PackageDirName = "mystia-steward-companion"
 $DistDir = Join-Path $DistRoot $PackageDirName
 $ZipPath = Join-Path $DistRoot "mystia-steward-companion-bepinex.zip"
+$ChecksumPath = Join-Path $DistRoot "checksums.txt"
 $DllPath = Join-Path $OutputDir "MystiaStewardCompanion.BepInEx.dll"
 
 if (-not (Test-Path -LiteralPath $DllPath -PathType Leaf)) {
@@ -47,4 +48,7 @@ if (Test-Path -LiteralPath $ZipPath) {
 }
 
 Compress-Archive -LiteralPath $DistDir -DestinationPath $ZipPath -Force
+$Hash = Get-FileHash -Algorithm SHA256 -LiteralPath $ZipPath
+"$($Hash.Hash.ToLowerInvariant())  $(Split-Path $ZipPath -Leaf)" | Set-Content -Encoding UTF8 -LiteralPath $ChecksumPath
 Write-Host "Package created: $ZipPath"
+Write-Host "Checksum created: $ChecksumPath"

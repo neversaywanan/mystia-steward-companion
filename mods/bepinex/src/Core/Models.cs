@@ -160,6 +160,7 @@ public sealed class NightBusinessContext
     public string? PlaceLabel { get; init; }
     public List<NightBusinessGuest> ActiveRareGuests { get; init; } = new();
     public List<NightBusinessOrder> Orders { get; init; } = new();
+    public long OrderRemovalVersion { get; init; }
     public string Source { get; init; } = "";
     public string? Error { get; init; }
 }

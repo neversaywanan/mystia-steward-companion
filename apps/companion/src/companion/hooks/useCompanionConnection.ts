@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readSnapshot } from '@/companion/api';
 import {
+  createNightBusinessContinuityState,
+  stabilizeNightBusinessSnapshot,
+} from '@/companion/domain/night-business-continuity';
+import {
   normalizeEndpoint,
   persistApiToken,
   persistEndpoint,
@@ -30,6 +34,8 @@ export function useCompanionConnection(snapshotRefreshIntervalMs: number) {
   const [lastConnectedAt, setLastConnectedAt] = useState<Date | null>(null);
   const latestRequestIdRef = useRef(0);
   const inFlightRequestIdRef = useRef<number | null>(null);
+  const acceptedSnapshotRef = useRef<LocalApiSnapshot | null>(null);
+  const nightBusinessContinuityRef = useRef(createNightBusinessContinuityState());
 
   const normalizedEndpoint = useMemo(() => normalizeEndpoint(endpoint), [endpoint]);
   const normalizedEndpointDraft = useMemo(() => normalizeEndpoint(endpointDraft), [endpointDraft]);
@@ -46,6 +52,8 @@ export function useCompanionConnection(snapshotRefreshIntervalMs: number) {
     setCachedRuntimeData(null);
     setManualRefreshing(false);
     setConnectionProbing(false);
+    acceptedSnapshotRef.current = null;
+    nightBusinessContinuityRef.current = createNightBusinessContinuityState();
   }, [normalizedEndpointDraft]);
 
   const pauseConnection = useCallback(() => {
@@ -89,7 +97,14 @@ export function useCompanionConnection(snapshotRefreshIntervalMs: number) {
         timeoutMs,
       });
       if (latestRequestIdRef.current !== requestId) return;
-      setSnapshot(data);
+      const stabilized = stabilizeNightBusinessSnapshot({
+        previousSnapshot: acceptedSnapshotRef.current,
+        nextSnapshot: data,
+        state: nightBusinessContinuityRef.current,
+      });
+      acceptedSnapshotRef.current = stabilized.snapshot;
+      nightBusinessContinuityRef.current = stabilized.state;
+      setSnapshot(stabilized.snapshot);
       setError('');
       setConnectionPaused(false);
       setConnectionFailureCount(0);

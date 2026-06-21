@@ -59,8 +59,8 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1
 
 ## GitHub Actions 与发布
 
-- `.github/workflows/ci.yml` 仅支持手动触发，用于前端 lint 和 build 检查。
-- 仓库不使用 GitHub Actions 自动构建 Release；不要新增 tag 自动构建 workflow。
+- `.github/workflows/ci.yml` 在 pull request 和 `main` push 时运行前端 lint、测试和 build；手动触发时使用私有引用包执行完整 Windows 构建。
+- 全量 workflow 只上传临时 Artifact，不自动创建 tag 或 Release；引用 DLL 不得进入当前仓库或构建产物。
 - 版本发布采用本机 Windows 构建后通过 `gh` 上传，详细说明见 `docs/local-release.md`。
 - 不要主动创建 tag 或发布 Release；版本构建必须等待用户明确指令。
 
@@ -69,7 +69,8 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\build-release.ps1
 - Mod 只读取当前游戏运行时数据，不读取 `.memory` 存档文件。
 - 运行时固定数据读取成功后，C# 侧会把 `DataBaseCore` / `DataBaseCharacter` / `DataBaseLanguage` 结构化为 `RuntimeDataCatalog`，并切换 `DataRepository` 到运行时仓库；伴随窗口收到 `snapshot.runtimeData.isComplete=true` 后，普客/稀客推荐、经营中推荐、任务目标、库存修改页和自动化目标解析都必须使用这份运行时数据集。
 - 本地 API 快照需要避免在 Unity 主线程高频序列化大对象。完整 `RuntimeDataCatalog` 可以被节流省略，前端必须缓存最近一次完整数据并继续使用；不要把缺失的 `snapshot.runtimeData` 当作数据不可用。快照内容签名未变化时应复用上一份缓存 JSON，不要为了 `CapturedAtUtc` 或性能数字重复序列化。运行时固定数据读取完成后不得在经营快照热路径重复刷新，未完成时也要做重试间隔保护。新增重扫描或自动化轮询时要记录到 `performanceMs` 或复用现有耗时指标，便于概览页排查掉帧；性能快照只保留近期样本，避免旧耗时长期误导判断。经营扫描指标应尽量按来源拆分，例如 `business.rare.*`、`business.normal.*`、`runtime.cookerSnapshot` 和 `mission.serveTargets`；普客订单快照应优先复用短 TTL 缓存，不要在一次快照发布链路中重复枚举同一批运行时对象。
-- 夜间经营订单优先使用 `SpecialOrderRuntimeCapture` 运行时捕获缓存；捕获缓存为空、诊断开启、需要初始化/回退校验，或捕获缓存有订单但本轮可接受订单少于缓存数量时，再扫描 OrderController、HUD、服务面板和桌位控制器补位。控制器扫描仍要读取活动稀客和预算资金信息，但不应在已有完整捕获订单时重复做完整订单反射扫描。
+- 夜间经营订单必须合并 `SpecialOrderRuntimeCapture` 运行时捕获与 OrderController、HUD、服务面板、桌位控制器等反射来源；不得因为捕获缓存非空或诊断开关状态而跳过某一类订单源并改变结果语义。所有来源都必须过滤已完成订单后再去重。反射扫描耗时继续记录到 `performanceMs`；若以后重新优化，必须先用真实经营场景测量，并保留多来源一致性校验与回归测试。
+- 伴随窗口对夜间订单使用有界 last-known-good：单个不同的空经营快照保留上一份订单和活动稀客，连续两个不同的空快照才确认清空；重复轮询同一缓存快照不得重复计数。`SpecialOrderRuntimeCapture.RemovalVersion` 增长、经营场景变化或离开夜间场景时必须立即接受清空，不得继续显示已完成订单。
 - 夜间经营订单必须按首次出现时间稳定显示；不得因桌号排序或推荐完整度排序让新订单插到旧订单前面。
 - 经营中订单排序支持 `点单顺序` 和 `稀客分组`。默认必须保持点单顺序；稀客分组模式下，同一稀客订单放在一起，稀客组之间按该稀客最早订单出现时间排序，组内仍按点单先后排序。经营中列表、当前点单推荐、专注模式、游戏界面置顶目标和自动化第一单选择必须复用同一排序函数。
 - 稀客/经营中推荐使用统一料理/酒水列表：满足点单 Tag 的候选优先，不满足点单但命中稀客偏好的候选直接进入同一列表并标注 `偏好备选`。不得再维护满足点单与喜好备选两套结果数组。当前稀客已接取的经营投喂任务指定料理可通过 `任务料理置顶` 开关在硬过滤后置顶；收藏料理和收藏酒水分别通过独立开关置顶。置顶不得绕过解锁、库存、预算阻止、排除项和缺失厨具过滤。料理推荐优先 `foodScore >= 3`，但必须保留“满足点单且低于 3 分”的候选作为兜底。

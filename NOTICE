@@ -4,5 +4,10 @@ This project retains source and license attribution for
 AnYiEE/touhou-mystia-izakaya-assistant, which is licensed under AGPL-3.0-only.
 This repository is therefore distributed under AGPL-3.0-only.
 
+The recipe, beverage, and rare-customer sprite sheets under
+apps/companion/public/assets/sprites were obtained from that community
+assistant project (https://github.com/AnYiEE/touhou-mystia-izakaya-assistant)
+for this project's non-commercial learning and identification UI.
+
 Touhou Mystia's Izakaya and related game assets belong to their respective
 rightsholders. This project is an unofficial community tool.

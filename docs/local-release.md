@@ -1,14 +1,52 @@
-# 本地构建与发布方案
+# GitHub Actions 与本地发布方案
 
 ## 发布方式
 
-本项目不再使用 GitHub Actions 自动构建 Release。发布采用：
+项目提供两条互不混淆的构建路径：
 
 ```text
-本机 Windows 构建完整产物 -> GitHub CLI 上传 Release
+GitHub Actions 手动全量构建 -> 下载临时 Artifact
+本机 Windows 构建完整产物 -> GitHub CLI 正式发布 Release
 ```
 
-原因是 Mod 编译依赖 BepInEx、Il2CppInterop 和 Unity interop DLL。这些 DLL 不提交到仓库，也不上传到 GitHub runner。
+Mod 编译依赖 BepInEx、Il2CppInterop 和 Unity interop DLL。这些 DLL 不提交到当前仓库，也不会包含在构建产物中。GitHub Actions 从单独的私有仓库 Release 下载引用包并校验 SHA256；正式 Release 仍由本机显式发布，workflow 不会自动创建 tag 或 Release。
+
+## GitHub Actions 全量构建
+
+`.github/workflows/ci.yml` 在 pull request 和 `main` push 时运行前端 lint、测试与构建。手动运行 `workflow_dispatch` 时，还会在 `windows-2022` 上编译 Tauri 可执行文件、BepInEx Mod DLL，并生成完整 ZIP 和校验文件。
+
+准备一个只有维护者可读的私有 GitHub 仓库，在其 `build-references` Release 中上传 `mystia-build-references.zip`。ZIP 根目录必须直接包含：
+
+```text
+BepInEx.Core.dll
+BepInEx.Unity.IL2CPP.dll
+0Harmony.dll
+Il2CppInterop.Runtime.dll
+Il2Cppmscorlib.dll
+UnityEngine.CoreModule.dll
+UnityEngine.InputLegacyModule.dll
+```
+
+在当前仓库的 Actions 配置中添加：
+
+- Repository variable `MYSTIA_REFERENCE_REPOSITORY`：私有引用仓库，格式为 `owner/repository`。
+- Repository variable `MYSTIA_REFERENCE_BUNDLE_SHA256`：引用 ZIP 的 64 位 SHA256。
+- Actions secret `MYSTIA_REFERENCE_TOKEN`：仅授予该私有引用仓库 Contents read 权限的 fine-grained token。
+
+Windows 上可用以下命令取得校验值：
+
+```powershell
+(Get-FileHash -Algorithm SHA256 .\mystia-build-references.zip).Hash.ToLowerInvariant()
+```
+
+配置完成后，在 GitHub 的 `Actions -> CI -> Run workflow` 运行。默认读取 `build-references` tag，也可以在触发时指定另一个引用 Release tag。成功后会保留 14 天的 Artifact，其中包含：
+
+- `mystia-steward-companion-bepinex.zip`
+- `checksums.txt`
+- `MystiaStewardCompanion.BepInEx.dll`
+- `mystia-steward-companion.exe`
+
+引用 DLL 只作为编译输入，不得上传到当前项目的 Artifact 或公开 Release。上传前应确认这些文件的许可条款允许存放在所选私有仓库中。
 
 ## 本机要求
 
@@ -105,7 +143,7 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\publish-release.ps1 `
 - `mods/bepinex/dist/mystia-steward-companion-bepinex.zip`
 - `mods/bepinex/dist/checksums.txt`
 
-`checksums.txt` 只包含 zip 的 SHA256。Tauri setup 安装器不会上传到 Release，避免和 Mod 分发包混淆。
+`checksums.txt` 只包含 zip 的 SHA256。Tauri setup 安装器不会上传到 Release，避免和 Mod 分发包混淆。GitHub Actions Artifact 同样生成该校验文件，但不会自动创建正式 Release。
 
 ## 只上传已有产物
 
@@ -122,6 +160,6 @@ pwsh -ExecutionPolicy Bypass -File mods\bepinex\tools\publish-release.ps1 `
 
 ## 注意事项
 
-- 不要直接推送 tag 期待 GitHub 自动构建；仓库没有 Release 构建 workflow。
+- 不要直接推送 tag 期待自动发布；全量 Actions 构建必须手动触发，且只生成 Artifact。
 - 构建引用 DLL 只留在本机 `References/`，不要提交。
 - 发布前运行 `set-version.ps1` 并提交版本号变更；发布脚本会自动校验版本一致性。

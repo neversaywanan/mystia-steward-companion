@@ -284,6 +284,7 @@ function buildSnapshot() {
         { deskCode: 1, guestId: 1001, guestName: '米斯蒂娅', source: 'mock', fund: 420, baseFundCarry: 240, maxFundCarry: 520, extraFundByBuff: 80, willPayMoney: true },
         { deskCode: 3, guestId: 1002, guestName: '露米娅', source: 'mock', fund: 360, baseFundCarry: 220, maxFundCarry: 430, extraFundByBuff: 40, willPayMoney: true },
       ],
+      orderRemovalVersion: 0,
       orders: [
         {
           deskCode: 1,

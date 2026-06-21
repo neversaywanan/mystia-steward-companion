@@ -1,23 +1,54 @@
 name: CI
 
 on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      reference_release_tag:
+        description: Private build-reference release tag
+        required: true
+        default: build-references
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
-  companion-check:
-    name: Companion frontend checks
+  quality:
+    name: Frontend quality gates
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Enable Corepack
         run: corepack enable
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
 
       - name: Install dependencies
         run: corepack pnpm install --frozen-lockfile
@@ -25,5 +56,114 @@ jobs:
       - name: Lint
         run: corepack pnpm lint
 
+      - name: Test
+        run: corepack pnpm test
+
       - name: Build frontend
         run: corepack pnpm build
+
+  full-windows-build:
+    name: Full Windows build
+    if: github.event_name == 'workflow_dispatch'
+    needs: quality
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      MYSTIA_REFERENCE_REPOSITORY: ${{ vars.MYSTIA_REFERENCE_REPOSITORY }}
+      MYSTIA_REFERENCE_BUNDLE_SHA256: ${{ vars.MYSTIA_REFERENCE_BUNDLE_SHA256 }}
+      MYSTIA_REFERENCE_RELEASE_TAG: ${{ inputs.reference_release_tag }}
+      GH_TOKEN: ${{ secrets.MYSTIA_REFERENCE_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        shell: pwsh
+        run: corepack enable
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        shell: pwsh
+        run: "Add-Content -Path $env:GITHUB_OUTPUT -Value \"path=$(corepack pnpm store path --silent)\""
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Setup Rust stable
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache Rust build data
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/companion/src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('apps/companion/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Validate reference configuration
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:MYSTIA_REFERENCE_REPOSITORY)) {
+            throw "Missing repository variable MYSTIA_REFERENCE_REPOSITORY (expected owner/private-repository)."
+          }
+          if ($env:MYSTIA_REFERENCE_BUNDLE_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "Missing or invalid repository variable MYSTIA_REFERENCE_BUNDLE_SHA256."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            throw "Missing Actions secret MYSTIA_REFERENCE_TOKEN."
+          }
+
+      - name: Download verified build references
+        shell: pwsh
+        run: |
+          ./mods/bepinex/tools/download-build-references.ps1 `
+            -Repository $env:MYSTIA_REFERENCE_REPOSITORY `
+            -Tag $env:MYSTIA_REFERENCE_RELEASE_TAG `
+            -ExpectedSha256 $env:MYSTIA_REFERENCE_BUNDLE_SHA256 `
+            -DestinationDir "$env:RUNNER_TEMP/mystia-build-references"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Build complete Windows package
+        shell: pwsh
+        run: |
+          ./mods/bepinex/tools/build-release.ps1 `
+            -SkipInstall `
+            -ReferenceDir "$env:RUNNER_TEMP/mystia-build-references"
+
+      - name: Upload complete build
+        uses: actions/upload-artifact@v7
+        with:
+          name: mystia-steward-companion-windows-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            mods/bepinex/dist/mystia-steward-companion-bepinex.zip
+            mods/bepinex/dist/checksums.txt
+            mods/bepinex/bin/Release/MystiaStewardCompanion.BepInEx.dll
+            apps/companion/src-tauri/target/release/mystia-steward-companion.exe

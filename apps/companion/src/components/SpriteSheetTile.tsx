@@ -1,10 +1,14 @@
+import { useState } from 'react';
+
 import { composeClassNames } from '@/components/ui/style';
 import { buildSpriteSheetLayout } from '@/lib/sprite-sheet';
 
-type SpriteTileSize = 'sm' | 'md';
+type SpriteTileSize = 'sm' | 'md' | 'lg';
 
 function renderSizePx(size: SpriteTileSize) {
-  return size === 'sm' ? 32 : 40;
+  if (size === 'sm') return 32;
+  if (size === 'lg') return 48;
+  return 40;
 }
 
 export function SpriteSheetTile({
@@ -26,12 +30,12 @@ export function SpriteSheetTile({
   title?: string;
   url?: string | null;
 }) {
-  const sizeClass = size === 'sm' ? 'size-8' : 'size-10';
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const sizeClass = size === 'sm' ? 'size-8' : size === 'lg' ? 'size-12' : 'size-10';
   const layout = spriteIndex === null
     ? null
     : buildSpriteSheetLayout({ columns, rows, spriteIndex, tileSize: renderSizePx(size) });
-
-  if (!layout || !url) {
+  if (!layout || !url || failedUrl === url) {
     return (
       <div
         className={composeClassNames(
@@ -60,8 +64,9 @@ export function SpriteSheetTile({
         alt=""
         className="pointer-events-none absolute left-0 top-0 max-w-none select-none"
         draggable={false}
-        src={url}
+        src={url ?? ''}
         style={{ ...layout, imageRendering: 'pixelated' }}
+        onError={() => setFailedUrl(url ?? null)}
       />
     </div>
   );

@@ -71,6 +71,7 @@ export interface NightBusinessContext {
   placeLabel: string | null;
   activeRareGuests: NightBusinessGuest[];
   orders: NightBusinessOrder[];
+  orderRemovalVersion?: number;
   source: string;
   error: string | null;
 }
