@@ -26,6 +26,7 @@ var inputModuleDestination = Path.Combine(outputDirectory, "UnityEngine.InputLeg
 File.Copy(coreModuleSource, coreModuleDestination, overwrite: true);
 File.Copy(inputModuleSource, inputModuleDestination, overwrite: true);
 
+var temporaryPath = coreModuleDestination + ".tmp";
 using (var assembly = AssemblyDefinition.ReadAssembly(coreModuleDestination))
 {
     var monoBehaviour = assembly.MainModule.GetType("UnityEngine.MonoBehaviour")
@@ -52,10 +53,9 @@ using (var assembly = AssemblyDefinition.ReadAssembly(coreModuleDestination))
         monoBehaviour.Methods.Add(pointerConstructor);
     }
 
-    var temporaryPath = coreModuleDestination + ".tmp";
     assembly.Write(temporaryPath);
-    File.Move(temporaryPath, coreModuleDestination, overwrite: true);
 }
+File.Move(temporaryPath, coreModuleDestination, overwrite: true);
 
 Console.WriteLine($"Prepared Unity compile references: {outputDirectory}");
 return 0;

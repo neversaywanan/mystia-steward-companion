@@ -86,10 +86,6 @@ try {
         Invoke-Pnpm -Title "Build companion frontend" -Arguments @("build")
     }
 
-    if (-not $SkipTauriBuild) {
-        Invoke-Pnpm -Title "Build companion window" -Arguments @("tauri:build")
-    }
-
     $Dotnet = Get-Command "dotnet" -ErrorAction SilentlyContinue
     if ($null -eq $Dotnet) {
         throw "dotnet was not found. Install .NET 6 SDK or newer."
@@ -101,6 +97,10 @@ try {
         -Title "Build BepInEx plugin" `
         -FilePath $Dotnet.Source `
         -Arguments $DotnetBuildArgs
+
+    if (-not $SkipTauriBuild) {
+        Invoke-Pnpm -Title "Build companion window" -Arguments @("tauri:build")
+    }
 
     if (-not $SkipPackage) {
         Write-Step "Create release package"

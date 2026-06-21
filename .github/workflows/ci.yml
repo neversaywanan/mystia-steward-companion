@@ -112,6 +112,7 @@ jobs:
             apps/companion/src-tauri/target
           key: cargo-${{ runner.os }}-${{ hashFiles('apps/companion/src-tauri/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
+          save-always: true
 
       - name: Install dependencies
         shell: pwsh
