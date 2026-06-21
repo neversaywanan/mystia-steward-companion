@@ -9,11 +9,24 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <RestoreAdditionalProjectSources>https://api.nuget.org/v3/index.json;https://nuget.bepinex.dev/v3/index.json;https://nuget.samboy.dev/v3/index.json</RestoreAdditionalProjectSources>
+    <UnityReferenceDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)unity-references</UnityReferenceDir>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.764" IncludeAssets="compile" />
-    <PackageReference Include="UnityEngine.Modules" Version="2021.3.33" IncludeAssets="compile" />
+    <PackageReference Include="UnityEngine.Modules" Version="2021.3.33" ExcludeAssets="compile;runtime" GeneratePathProperty="true" />
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(UnityReferenceDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(UnityReferenceDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
+
+  <Target Name="PrepareUnityCompileReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Exec Command="dotnet run --project &quot;$(MSBuildProjectDirectory)\tools\UnityReferencePatcher\UnityReferencePatcher.csproj&quot; --configuration Release -- &quot;$(PkgUnityEngine_Modules)&quot; &quot;$(UnityReferenceDir)&quot;" />
+  </Target>
 
 </Project>
